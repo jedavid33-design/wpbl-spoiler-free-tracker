@@ -1,7 +1,7 @@
-const ASTROS_TEAM_ID = 117;
+const WPBL_API_BASE = "https://stats.womensprobaseballleague.com/v1";
 
 let GAME_DATE = "2026-05-29";
-let SAVE_KEY = `astros-tracker-${GAME_DATE}`;
+let SAVE_KEY = `wpbl-tracker-${GAME_DATE}`;
 
 let events = [];
 let revealedIndexes = [];
@@ -13,7 +13,7 @@ let currentGamePk = null;
 
 function setGameDate(newDate) {
     GAME_DATE = newDate;
-    SAVE_KEY = `astros-tracker-${GAME_DATE}`;
+    SAVE_KEY = `wpbl-tracker-${GAME_DATE}`;
     events = [];
     revealedIndexes = [];
     loadGame();
