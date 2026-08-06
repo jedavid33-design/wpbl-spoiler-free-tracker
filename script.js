@@ -96,9 +96,12 @@ if (askResume && saved) {
 function getRunsScored(play) {
     const narrative = play.narrative || "";
 
-    // WPBL's runs_scored appears to omit the batter on home runs.
-    // If the narrative includes an RBI total, trust that for homers.
-    if (play.event_type === "home_run") {
+    // For home runs, WPBL's runs_scored may omit the batter.
+    // The narrative gives us the correct RBI total.
+    const isHomeRun =
+        /homered|home run/i.test(narrative);
+
+    if (isHomeRun) {
         const rbiMatch = narrative.match(/(\d+)\s+RBI/i);
 
         if (rbiMatch) {
@@ -106,7 +109,7 @@ function getRunsScored(play) {
         }
     }
 
-    return play.runs_scored || 0;
+    return Number(play.runs_scored) || 0;
 }
 function buildEvents(data) {
     events = [];
