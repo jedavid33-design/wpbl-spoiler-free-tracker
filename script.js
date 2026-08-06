@@ -93,7 +93,21 @@ if (askResume && saved) {
 
     updateStatus();
 }
+function getRunsScored(play) {
+    const narrative = play.narrative || "";
 
+    // WPBL's runs_scored appears to omit the batter on home runs.
+    // If the narrative includes an RBI total, trust that for homers.
+    if (play.event_type === "home_run") {
+        const rbiMatch = narrative.match(/(\d+)\s+RBI/i);
+
+        if (rbiMatch) {
+            return Number(rbiMatch[1]);
+        }
+    }
+
+    return play.runs_scored || 0;
+}
 function buildEvents(data) {
     events = [];
 
@@ -161,7 +175,7 @@ function buildEvents(data) {
 
                 // We'll calculate spoiler-safe scores from runs scored,
                 // rather than exposing the live final/current score.
-                runsScored: play.runs_scored || 0,
+                runsScored: getRunsScored(play),
 
                 isHit: play.is_hit || false,
                 isScoringPlay: play.is_scoring_play || false
