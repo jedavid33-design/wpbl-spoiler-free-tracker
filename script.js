@@ -1,5 +1,7 @@
 const WPBL_API_BASE = "https://stats.womensprobaseballleague.com/v1";
 
+const WPBL_TEST_GAME_ID = "v7zr9elz0xc5lqbw";
+
 let GAME_DATE = "2026-05-29";
 let SAVE_KEY = `wpbl-tracker-${GAME_DATE}`;
 
@@ -43,34 +45,31 @@ function loadPickedDate() {
 
 async function loadGame(askResume = true) {
     if (askResume) {
-    document.getElementById("status").innerHTML = "Loading Astros game...";
+    document.getElementById("status").innerHTML = "Loading WPBL game...";
     document.getElementById("batterInfo").innerHTML = "";
     document.getElementById("eventList").innerHTML = "";
 }
 
-    const scheduleUrl =
-        `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${ASTROS_TEAM_ID}&date=${GAME_DATE}`;
+    const gameId = WPBL_TEST_GAME_ID;
 
-    const scheduleResponse = await fetch(scheduleUrl);
-    const scheduleData = await scheduleResponse.json();
+const feedUrl =
+    `${WPBL_API_BASE}/games/${gameId}/boxscore`;
 
-    const games = scheduleData.dates?.[0]?.games || [];
+const feedResponse = await fetch(feedUrl);
+const responseData = await feedResponse.json();
 
-    if (games.length === 0) {
-        document.getElementById("status").innerHTML =
-            "No Astros game found for that date.";
-        return;
-    }
-
-    const gamePk = games[0].gamePk;
-
-    const feedUrl =
-        `https://statsapi.mlb.com/api/v1.1/game/${gamePk}/feed/live`;
-
-    const feedResponse = await fetch(feedUrl);
-    const feedData = await feedResponse.json();
+const feedData = responseData.boxscore;
 
 currentGameData = feedData;
+currentGamePk = gameId;
+
+const awayTeam = feedData.teams.find(team => team.side === "away");
+const homeTeam = feedData.teams.find(team => team.side === "home");
+
+awayTeamName = awayTeam?.name || "Away";
+homeTeamName = homeTeam?.name || "Home";
+
+buildEvents(feedData);
 currentGamePk = gamePk;
 
 awayTeamName = feedData.gameData.teams.away.teamName;
@@ -104,67 +103,74 @@ if (askResume && saved) {
 function buildEvents(data) {
     events = [];
 
-    const plays = data.liveData.plays.allPlays;
+    const plays = data.plays || [];
 
     plays.forEach((play, playNumber) => {
-        const inning = play.about.inning;
-        const half = play.about.halfInning.toUpperCase();
-        const batter = play.matchup.batter.fullName;
-        const pitcher = play.matchup.pitcher.fullName;
+        const inning = play.inning;
+        const half = (play.half || "").toUpperCase();
+        const batter = play.batter_name || "";
+        const pitcher = play.pitcher_name || "";
 
-        play.playEvents.forEach(event => {
-            const desc = event.details?.description;
+        // Add individual pitches first
+        const pitchEvents = play.pitch_events || [];
 
-            if (!desc) return;
+        let balls = 0;
+        let strikes = 0;
 
-const lowerDesc = desc.toLowerCase();
+        pitchEvents.forEach((pitch, pitchIndex) => {
+            const code = pitch.code;
+            let text = pitch.description || `Pitch ${pitchIndex + 1}`;
 
-const hiddenEvents = [
-    "mound visit",
-    "batter timeout",
-    "offensive timeout",
-    "defensive timeout",
-    "on-field delay"
-];
-
-const shouldHide = hiddenEvents.some(hidden =>
-    lowerDesc.includes(hidden)
-);
-
-if (shouldHide) {
-    return;
-}
+            // WPBL currently mislabels some codes.
+            // K behaves like a strike in the captured feed.
+            // P appears to mean ball put in play.
+            if (code === "B") {
+                balls++;
+            } else if (code === "K") {
+                strikes++;
+                text = "Called strike";
+            } else if (code === "F") {
+                if (strikes < 2) strikes++;
+                text = "Foul";
+            } else if (code === "P") {
+                text = "In play";
+            }
 
             events.push({
                 inning: `${half} ${inning}`,
                 batter: batter,
                 pitcher: pitcher,
-                text: desc,
+                text: text,
                 atBat: playNumber,
-                balls: event.count?.balls,
-                strikes: event.count?.strikes,
-                outs: event.count?.outs,
-                pitchNumber: event.pitchNumber
+                balls: balls,
+                strikes: strikes,
+                outs: play.outs,
+                pitchNumber: pitchIndex + 1
             });
         });
 
-        const resultText = play.result?.description;
-
-        if (resultText) {
+        // Add the completed play / plate appearance
+        if (play.narrative) {
             events.push({
                 inning: `${half} ${inning}`,
                 batter: batter,
                 pitcher: pitcher,
-                text: `RESULT: ${resultText}`,
+                text: `RESULT: ${play.narrative}`,
                 atBat: playNumber,
-                balls: play.count?.balls,
-                strikes: play.count?.strikes,
-                outs: play.count?.outs,
+                balls: play.balls,
+                strikes: play.strikes,
+                outs: play.outs,
                 pitchNumber: null,
-                awayScore: play.result?.awayScore,
-                homeScore: play.result?.homeScore,
-                eventType: play.result?.eventType,
-                battingSide: half === "TOP" ? "away" : "home"
+
+                eventType: play.event_type,
+                battingSide: half === "TOP" ? "away" : "home",
+
+                // We'll calculate spoiler-safe scores from runs scored,
+                // rather than exposing the live final/current score.
+                runsScored: play.runs_scored || 0,
+
+                isHit: play.is_hit || false,
+                isScoringPlay: play.is_scoring_play || false
             });
         }
     });
