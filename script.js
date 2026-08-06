@@ -1,4 +1,4 @@
-const WPBL_API_BASE = "https://stats.womensprobaseballleague.com/v1";
+const WPBL_API_BASE = "https://wpbl-api.4d8v7jw78c.workers.dev";
 
 const WPBL_TEST_GAME_ID = "v7zr9elz0xc5lqbw";
 
