@@ -69,13 +69,7 @@ const homeTeam = feedData.teams.find(team => team.side === "home");
 awayTeamName = awayTeam?.name || "Away";
 homeTeamName = homeTeam?.name || "Home";
 
-buildEvents(feedData);
-currentGamePk = gamePk;
-
-awayTeamName = feedData.gameData.teams.away.teamName;
-homeTeamName = feedData.gameData.teams.home.teamName;
-    
-    buildEvents(feedData);
+buildEvents(feedData)
 
     const saved = localStorage.getItem(SAVE_KEY);
 
@@ -133,8 +127,8 @@ function buildEvents(data) {
                 if (strikes < 2) strikes++;
                 text = "Foul";
             } else if (code === "P") {
-                text = "In play";
-            }
+    text = pitch.description || "Pitch";
+}
 
             events.push({
                 inning: `${half} ${inning}`,
@@ -195,12 +189,12 @@ function getSpoilerFreeScore() {
     revealedIndexes.forEach(index => {
         const event = events[index];
 
-        if (
-            event.awayScore !== undefined &&
-            event.homeScore !== undefined
-        ) {
-            awayScore = event.awayScore;
-            homeScore = event.homeScore;
+        if (!event.runsScored) return;
+
+        if (event.battingSide === "away") {
+            awayScore += event.runsScored;
+        } else if (event.battingSide === "home") {
+            homeScore += event.runsScored;
         }
     });
 
