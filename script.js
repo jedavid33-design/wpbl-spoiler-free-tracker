@@ -6,12 +6,19 @@ async function loadWPBLGames() {
     const response = await fetch(`${WPBL_API_BASE}/games`);
     const data = await response.json();
 
-    WPBL_GAMES = (data.games || []).map(game => ({
-        date: game.scheduled_start?.split("T")[0] || "",
+WPBL_GAMES = (data.games || [])
+    .filter(game =>
+        game.game_id &&
+        game.scheduled_start &&
+        game.away_team_name &&
+        game.home_team_name
+    )
+    .map(game => ({
+        date: game.scheduled_start.split("T")[0],
         gameId: game.game_id,
-        away: game.away_team_name || "Away",
-        home: game.home_team_name || "Home",
-        time: game.scheduled_start || ""
+        away: game.away_team_name,
+        home: game.home_team_name,
+        time: game.scheduled_start
     }));
 
     showGamesForDate("today");
