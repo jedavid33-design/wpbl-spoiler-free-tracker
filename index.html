@@ -1,56 +1,79 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Astros Spoiler-Free Tracker</title>
+    <title>WPBL Spoiler-Free Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 <link rel="apple-touch-icon" href="icon.PNG">
 <link rel="icon" type="image/png" href="icon.PNG">
 </head>
 
 <body>
 
-    <h1>⚾ Julie's Game Day ⚾</h1>
+    <main class="app">
 
-    <div>
-    <button onclick="loadToday()">Today's Game</button>
-    <button onclick="loadYesterday()">Yesterday's Game</button>
+        <section id="gamePicker" class="game-picker">
+            <h1>⚾ Julie's WPBL Game Day ⚾</h1>
+            <p>Choose a game</p>
 
-    <br><br>
+            <div class="date-controls">
+                <button onclick="showGamesForDate('yesterday')">Yesterday</button>
+                <button onclick="showGamesForDate('today')">Today</button>
 
-    <input type="date" id="gameDate">
-    <button onclick="loadPickedDate()">Load Date</button>
-</div>
+                <br><br>
 
-   <button onclick="previousEvent()">
-    Previous Event
-</button>
-    
-    <button onclick="nextAtBat()">
-        Next At-Bat
-    </button>
+                <input type="date" id="pickerDate">
+                <button onclick="showGamesForDate('picked')">Load Date</button>
+            </div>
 
-    <button onclick="nextInning()">
-        Next Inning
-    </button>
+            <div id="gameChoices"></div>
+        </section>
 
-    <div id="status">
-    Loading...
-</div>
 
-<button id="batterInfo" onclick="nextEvent()">
-    Batter info will appear here.
-</button>
+        <section id="trackerScreen" class="hidden">
 
-<div id="eventList"></div>
-<div id="lineupModal" class="modal hidden">
-    <div class="modal-content">
-        <button class="modal-close" onclick="closeLineup()">×</button>
-        <h2 id="lineupTitle"></h2>
-        <div id="lineupBody"></div>
-    </div>
-</div>
-    <script src="script.js?v=4"></script>
+            <button onclick="returnToGamePicker()">
+                ← Choose Another Game
+            </button>
+
+            <h1>⚾ Julie's WPBL Game Day ⚾</h1>
+
+            <button onclick="previousEvent()">
+                Previous Event
+            </button>
+
+            <button onclick="nextAtBat()">
+                Next At-Bat
+            </button>
+
+            <button onclick="nextInning()">
+                Next Inning
+            </button>
+
+            <div id="status">
+                Loading...
+            </div>
+
+            <button id="batterInfo" onclick="nextEvent()">
+                Batter info will appear here.
+            </button>
+
+            <div id="eventList"></div>
+
+        </section>
+
+
+        <div id="lineupModal" class="modal hidden">
+            <div class="modal-content">
+                <button class="modal-close" onclick="closeLineup()">×</button>
+                <h2 id="lineupTitle"></h2>
+                <div id="lineupBody"></div>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="script.js?v=5"></script>
 
 </body>
 </html>
