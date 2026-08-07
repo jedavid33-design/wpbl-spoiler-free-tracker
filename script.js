@@ -1,14 +1,21 @@
 const WPBL_API_BASE = "https://wpbl-api.4d8v7jw78c.workers.dev";
 
-const WPBL_GAMES = [
-    {
-        date: "2026-05-29",
-        gameId: "v7zr9elz0xc5lqbw",
-        away: "Boston Hunters",
-        home: "Los Angeles Queens",
-        time: "7:30 PM"
-    }
-];
+let WPBL_GAMES = [];
+
+async function loadWPBLGames() {
+    const response = await fetch(`${WPBL_API_BASE}/games`);
+    const data = await response.json();
+
+    WPBL_GAMES = (data.games || []).map(game => ({
+        date: game.scheduled_start?.split("T")[0] || "",
+        gameId: game.game_id,
+        away: game.away_team_name || "Away",
+        home: game.home_team_name || "Home",
+        time: game.scheduled_start || ""
+    }));
+
+    showGamesForDate("today");
+}
 
 let selectedGameId = null;
 
@@ -646,7 +653,7 @@ function getLineupAtPoint(teamSide, maxAtBat) {
 function closeLineup() {
     document.getElementById("lineupModal").classList.add("hidden");
 }
-showGamesForDate("today");
+loadWPBLGames();
 
 setInterval(() => {
     if (selectedGameId) {
