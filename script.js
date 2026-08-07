@@ -1,9 +1,19 @@
 const WPBL_API_BASE = "https://wpbl-api.4d8v7jw78c.workers.dev";
 
-const WPBL_TEST_GAME_ID = "v7zr9elz0xc5lqbw";
+const WPBL_GAMES = [
+    {
+        date: "2026-05-29",
+        gameId: "v7zr9elz0xc5lqbw",
+        away: "Boston Hunters",
+        home: "Los Angeles Queens",
+        time: "7:30 PM"
+    }
+];
 
-let GAME_DATE = "2026-05-29";
-let SAVE_KEY = `wpbl-tracker-${GAME_DATE}`;
+let selectedGameId = null;
+
+let GAME_DATE = "";
+let SAVE_KEY = "";
 
 let events = [];
 let revealedIndexes = [];
@@ -13,36 +23,88 @@ let homeTeamName = "";
 let currentGameData = null;
 let currentGamePk = null;
 
-function setGameDate(newDate) {
-    GAME_DATE = newDate;
-    SAVE_KEY = `wpbl-tracker-${GAME_DATE}`;
-    events = [];
-    revealedIndexes = [];
-    loadGame();
+function getLocalDateString(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
 }
 
-function loadToday() {
-    const today = new Date().toISOString().split("T")[0];
-    setGameDate(today);
+function showGamesForDate(mode) {
+    let date;
+
+    if (mode === "today") {
+        date = getLocalDateString();
+    } else if (mode === "yesterday") {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        date = getLocalDateString(yesterday);
+    } else {
+        date = document.getElementById("pickerDate").value;
+
+        if (!date) {
+            alert("Pick a date first.");
+            return;
+        }
+    }
+
+    document.getElementById("pickerDate").value = date;
+    renderGameChoices(date);
 }
 
-function loadYesterday() {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    setGameDate(yesterday.toISOString().split("T")[0]);
-}
+function renderGameChoices(date) {
+    const container = document.getElementById("gameChoices");
 
-function loadPickedDate() {
-    const pickedDate = document.getElementById("gameDate").value;
+    const games = WPBL_GAMES.filter(game => game.date === date);
 
-    if (!pickedDate) {
-        alert("Pick a date first.");
+    if (games.length === 0) {
+        container.innerHTML = `
+            <p class="no-games">
+                No WPBL games found for this date.
+            </p>
+        `;
         return;
     }
 
-    setGameDate(pickedDate);
+    container.innerHTML = games.map(game => `
+        <button
+            class="game-choice"
+            onclick="selectGame('${game.gameId}', '${game.date}')"
+        >
+            <strong>${game.away}</strong>
+            <span> at </span>
+            <strong>${game.home}</strong>
+            <small>${game.time}</small>
+        </button>
+    `).join("");
 }
 
+function selectGame(gameId, gameDate) {
+    selectedGameId = gameId;
+    GAME_DATE = gameDate;
+
+    SAVE_KEY = `wpbl-tracker-${gameId}`;
+
+    events = [];
+    revealedIndexes = [];
+
+    document.getElementById("gamePicker").classList.add("hidden");
+    document.getElementById("trackerScreen").classList.remove("hidden");
+
+    loadGame();
+}
+
+function returnToGamePicker() {
+    selectedGameId = null;
+    currentGameData = null;
+    currentGamePk = null;
+
+    document.getElementById("trackerScreen").classList.add("hidden");
+    document.getElementById("gamePicker").classList.remove("hidden");
+}
+
+    
 async function loadGame(askResume = true) {
     if (askResume) {
     document.getElementById("status").innerHTML = "Loading WPBL game...";
@@ -50,7 +112,11 @@ async function loadGame(askResume = true) {
     document.getElementById("eventList").innerHTML = "";
 }
 
-    const gameId = WPBL_TEST_GAME_ID;
+    if (!selectedGameId) {
+    return;
+}
+
+const gameId = selectedGameId;
 
 const feedUrl =
     `${WPBL_API_BASE}/games/${gameId}/boxscore`;
@@ -580,8 +646,10 @@ function getLineupAtPoint(teamSide, maxAtBat) {
 function closeLineup() {
     document.getElementById("lineupModal").classList.add("hidden");
 }
-loadGame();
+showGamesForDate("today");
 
 setInterval(() => {
-    loadGame(false);
+    if (selectedGameId) {
+        loadGame(false);
+    }
 }, 15000);
