@@ -66,7 +66,20 @@ function showGamesForDate(mode) {
     document.getElementById("pickerDate").value = date;
     renderGameChoices(date);
 }
+function formatGameTime(time) {
+    if (!time) return "";
 
+    const gameTime = new Date(time);
+
+    if (isNaN(gameTime)) {
+        return time;
+    }
+
+    return gameTime.toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit"
+    });
+}
 function renderGameChoices(date) {
     const container = document.getElementById("gameChoices");
 
@@ -89,7 +102,7 @@ function renderGameChoices(date) {
             <strong>${game.away}</strong>
             <span> at </span>
             <strong>${game.home}</strong>
-            <small>${game.time}</small>
+            <small>${formatGameTime(game.time)}</small>
         </button>
     `).join("");
 }
