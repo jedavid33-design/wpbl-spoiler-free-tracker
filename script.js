@@ -166,7 +166,7 @@ function buildEvents(data) {
                 inning: `${half} ${inning}`,
                 batter: batter,
                 pitcher: pitcher,
-                text: `RESULT: ${play.narrative} [DEBUG raw=${play.runs_scored} calc=${getRunsScored(play)} type=${play.event_type}]`,
+                text: `RESULT: ${play.narrative}`,
                 atBat: playNumber,
                 balls: play.balls,
                 strikes: play.strikes,
