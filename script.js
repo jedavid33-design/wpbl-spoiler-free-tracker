@@ -189,17 +189,32 @@ if (askResume && saved) {
 function getRunsScored(play) {
     const narrative = play.narrative || "";
 
-    // For home runs, WPBL's runs_scored may omit the batter.
-    // The narrative gives us the correct RBI total.
+    // WPBL's runs_scored may omit the batter on home runs.
+    // For homers, use the RBI total from the narrative.
     const isHomeRun =
         /homered|home run/i.test(narrative);
 
     if (isHomeRun) {
-        const rbiMatch = narrative.match(/(\d+)\s+RBI/i);
+        // Handles:
+        // "RBI"   = 1 run
+        // "2 RBI" = 2 runs
+        // "3 RBI" = 3 runs
+        // "4 RBI" = 4 runs
+        const rbiMatch =
+            narrative.match(/(?:(\d+)\s+)?RBI\b/i);
 
         if (rbiMatch) {
-            return Number(rbiMatch[1]);
+            return rbiMatch[1]
+                ? Number(rbiMatch[1])
+                : 1;
         }
+
+        // Emergency fallback:
+        // batter scores on every home run.
+        const runnersScored =
+            (narrative.match(/\bscored\b/gi) || []).length;
+
+        return runnersScored + 1;
     }
 
     return Number(play.runs_scored) || 0;
