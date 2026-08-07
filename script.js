@@ -587,29 +587,46 @@ function showLineup(teamSide) {
         return;
     }
 
-    const teamData = currentGameData.gameData.teams[teamSide];
-    const teamName = teamData.teamName;
+    const team = currentGameData.teams.find(team => team.side === teamSide);
 
-    const currentIndex = getCurrentIndex();
-    const maxAtBat =
-        currentIndex === -1
-            ? -1
-            : events[currentIndex].atBat;
+    if (!team) {
+        alert("Team data is not available.");
+        return;
+    }
 
-    const lineup = getLineupAtPoint(teamSide, maxAtBat);
+    const players = team.players || [];
+
+    const lineup = players
+        .filter(player => {
+            const spot = Number(player.spot);
+            return spot >= 1 && spot <= 9;
+        })
+        .sort((a, b) => Number(a.spot) - Number(b.spot));
 
     let lineupHtml = "";
 
     if (lineup.length === 0) {
-        lineupHtml = "<p>Lineup is not available yet for this point in the game.</p>";
+        lineupHtml =
+            "<p>Lineup is not available yet for this game.</p>";
     } else {
         lineupHtml = "<ol class='lineup-list'>";
 
         lineup.forEach(player => {
+            const number = player.uniform
+                ? `#${player.uniform}`
+                : "";
+
+            const position =
+                (player.position || "—").toUpperCase();
+
             lineupHtml += `
                 <li>
-                    <span class="lineup-player">${player.name}</span>
-                    <span class="lineup-position">${player.position}</span>
+                    <span class="lineup-player">
+                        ${number} ${player.name}
+                    </span>
+                    <span class="lineup-position">
+                        ${position}
+                    </span>
                 </li>
             `;
         });
@@ -617,58 +634,14 @@ function showLineup(teamSide) {
         lineupHtml += "</ol>";
     }
 
-    document.getElementById("lineupTitle").innerHTML = `${teamName} Lineup`;
-    document.getElementById("lineupBody").innerHTML = lineupHtml;
-    document.getElementById("lineupModal").classList.remove("hidden");
-}
-function getLineupAtPoint(teamSide, maxAtBat) {
-    const plays = currentGameData.liveData.plays.allPlays;
-    const boxscoreTeam = currentGameData.liveData.boxscore.teams[teamSide];
-    const players = boxscoreTeam.players || {};
+    document.getElementById("lineupTitle").innerHTML =
+        `${team.name} Lineup`;
 
-    const lineupMap = new Map();
+    document.getElementById("lineupBody").innerHTML =
+        lineupHtml;
 
-    plays.forEach((play, playIndex) => {
-        const battingSide =
-            play.about.halfInning === "top" ? "away" : "home";
-
-        if (battingSide !== teamSide) return;
-
-        const batterId = play.matchup.batter.id;
-        const batterKey = `ID${batterId}`;
-        const batterInfo = players[batterKey];
-
-        if (!batterInfo) return;
-
-        const battingOrder = batterInfo.battingOrder;
-        if (!battingOrder) return;
-
-        const lineupSpot = Math.floor(Number(battingOrder) / 100);
-        if (lineupSpot < 1 || lineupSpot > 9) return;
-
-        // First time we see a lineup spot = starter.
-        if (!lineupMap.has(lineupSpot)) {
-            lineupMap.set(lineupSpot, {
-                name: batterInfo.person.fullName,
-                position: batterInfo.position?.abbreviation || "—"
-            });
-        }
-
-        // After revealed point, do not apply future substitutions.
-        if (maxAtBat !== -1 && playIndex > maxAtBat) {
-            return;
-        }
-
-        // Up to revealed point, update if a new player appears in that spot.
-        lineupMap.set(lineupSpot, {
-            name: batterInfo.person.fullName,
-            position: batterInfo.position?.abbreviation || "—"
-        });
-    });
-
-    return Array.from(lineupMap.entries())
-        .sort((a, b) => Number(a[0]) - Number(b[0]))
-        .map(entry => entry[1]);
+    document.getElementById("lineupModal")
+        .classList.remove("hidden");
 }
 function closeLineup() {
     document.getElementById("lineupModal").classList.add("hidden");
