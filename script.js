@@ -587,16 +587,16 @@ function showLineup(teamSide) {
         return;
     }
 
-    const team = currentGameData.teams.find(team => team.side === teamSide);
+    const team = currentGameData.teams.find(
+        team => team.side === teamSide
+    );
 
     if (!team) {
         alert("Team data is not available.");
         return;
     }
 
-    const players = team.players || [];
-
-    const lineup = players
+    const lineup = (team.starters || [])
         .filter(player => {
             const spot = Number(player.spot);
             return spot >= 1 && spot <= 9;
@@ -607,7 +607,7 @@ function showLineup(teamSide) {
 
     if (lineup.length === 0) {
         lineupHtml =
-            "<p>Lineup is not available yet for this game.</p>";
+            "<p>Starting lineup is not available yet.</p>";
     } else {
         lineupHtml = "<ol class='lineup-list'>";
 
@@ -635,7 +635,7 @@ function showLineup(teamSide) {
     }
 
     document.getElementById("lineupTitle").innerHTML =
-        `${team.name} Lineup`;
+        `${team.name} Starting Lineup`;
 
     document.getElementById("lineupBody").innerHTML =
         lineupHtml;
