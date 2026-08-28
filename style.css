@@ -1,10 +1,10 @@
 body {
-    font-family: Arial, sans-serif;
     background-color: #f5f5f5;
-    text-align: center;
-    padding: 20px;
-    max-width: 1400px;
+    font-family: Arial, sans-serif;
     margin: 0 auto;
+    max-width: 1400px;
+    padding: 20px;
+    text-align: center;
 }
 
 h1 {
@@ -12,109 +12,157 @@ h1 {
     font-size: 25px;
 }
 
+.game-picker {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 18px rgba(0, 45, 98, 0.12);
+    margin: 24px auto;
+    max-width: 460px;
+    padding: 24px 18px;
+}
+
+.game-picker h2 {
+    color: #002D62;
+    font-size: 20px;
+    margin: 0 0 16px;
+}
+
+.today-game {
+    display: flex;
+    flex-direction: column;
+    margin: 8px auto;
+    min-width: 220px;
+}
+
+.today-game span {
+    font-size: 12px;
+    font-weight: normal;
+    margin-top: 3px;
+    opacity: 0.82;
+}
+
+.date-picker-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 12px;
+}
+
+.date-picker-row input {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 16px;
+    padding: 10px;
+}
+
 button {
-    padding: 12px 18px;
-    margin: 5px;
+    background-color: #002D62;
     border: none;
     border-radius: 8px;
-    background-color: #002D62;
     color: white;
-    font-size: 16px;
     cursor: pointer;
+    font-size: 16px;
+    margin: 5px;
+    padding: 12px 18px;
 }
 
-button:hover {
-    opacity: 0.9;
+button:hover { opacity: 0.9; }
+
+.change-game {
+    background: transparent;
+    color: #002D62;
+    font-size: 14px;
+    padding: 8px 10px;
 }
+
+.navigation-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.forward-nav,
+.jump-live,
+.previous-nav {
+    background: #002D62;
+    color: white;
+}
+
+#gameChoices { margin-top: 14px; }
+
+.game-choice {
+    display: block;
+    margin: 10px auto;
+    max-width: 360px;
+    width: 100%;
+}
+
+.game-choice small {
+    display: block;
+    font-size: 12px;
+    margin-top: 4px;
+    opacity: 0.82;
+}
+
+.no-games { color: #475569; }
 
 #status {
-    margin-top: 15px;
-    padding: 12px;
     background: white;
     border-radius: 10px;
     box-shadow: 0 0 10px rgba(0,0,0,0.1);
     font-size: 16px;
     line-height: 1.5;
+    margin-top: 15px;
+    padding: 12px;
 }
 
 #batterInfo {
-    display: block;
-    width: 100%;
-    max-width: 1000px;
-    margin: 15px auto;
-    padding: 16px;
     background: white;
-    color: #002D62;
-    border-left: 6px solid #EB6E1F;
+    border-left: 6px solid var(--active-team-color, #64748B);
     border-radius: 12px;
     box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    color: #002D62;
+    cursor: pointer;
+    display: block;
     font-size: .8em;
     line-height: 1.5;
-    text-align: center;
-    cursor: pointer;
-}
-
-#batterInfo:hover {
-    opacity: 0.95;
-}
-
-#eventList {
-    margin-top: 15px;
-}
-
-.event-card {
-    background: white;
-    border-radius: 10px;
-    padding: 15px;
-    margin-bottom: 10px;
-    text-align: left;
-    box-shadow: 0 0 5px rgba(0,0,0,0.1);
-    font-size: 15px;
-}
-
-.event-card h3 {
-    margin: 0 0 8px 0;
-    font-size: 15px;
-}
-
-.event-card p {
-    margin: 5px 0;
-}
-
-@media (min-width: 1000px) {
-    #eventList {
-        max-width: 1000px;
-        margin: auto;
-        margin-top: 15px;
-    }
-
-    #status,
-    #batterInfo {
-        max-width: 1000px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-}
-.event-row {
+    margin: 15px auto;
     max-width: 1000px;
-    margin: 4px auto;
-    padding: 8px 12px;
+    padding: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+#batterInfo:hover { opacity: 0.95; }
+#eventList { margin-top: 15px; }
+
+.event-row {
     background: white;
     border-radius: 8px;
-    text-align: left;
-    font-size: 14px;
     box-shadow: 0 0 4px rgba(0,0,0,0.08);
+    font-size: 14px;
+    margin: 4px auto;
+    max-width: 1000px;
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.team-event {
+    background: white;
+    border-left: 5px solid var(--event-team-color, #64748B);
 }
 
 .event-icon {
     display: inline-block;
-    min-width: 28px;
     font-weight: bold;
+    min-width: 28px;
 }
 
-.event-text {
-    vertical-align: middle;
-}
+.event-text { vertical-align: middle; }
+.important-event .event-text { font-weight: 700; }
+.low-emphasis .event-text { font-weight: 400; }
+
 .inning-line {
     font-size: 20px;
     font-weight: bold;
@@ -128,108 +176,119 @@ button:hover {
 
 .count-line {
     display: flex;
-    justify-content: center;
-    gap: 27px;      /* was 30 */
-    font-size: 18px; /* was 20 */
+    font-size: 18px;
     font-weight: bold;
+    gap: 27px;
+    justify-content: center;
 }
 
+.count-dots { font-size: 0.8em; }
+
 .scoreboard {
-    width: 260px;
-    margin: 0 auto;
     font-size: 0.8em;
+    margin: 0 auto;
+    width: min(100%, 300px);
 }
 
 .rhe-header,
 .rhe-row {
-    display: grid;
-    grid-template-columns: 130px 45px 45px 45px;
     align-items: center;
+    display: grid;
+    grid-template-columns: minmax(130px, 1fr) 45px 45px 45px;
     text-align: center;
 }
 
-.rhe-header span:first-child,
-.rhe-row span:first-child {
-    text-align: left;
-}
-
-.rhe-header {
-    font-weight: bold;
-}
-
+.rhe-header { font-weight: bold; }
 .rhe-row {
     font-weight: bold;
     line-height: 1.1;
     margin: 2px 0;
 }
-.count-dots {
-    font-size: 0.8em;
-}
+
 .team-link {
-    padding: 0;
-    margin: 0;
     background: none;
     color: #002D62;
-    font-weight: bold;
-    text-align: left;
     font-size: 1em;
+    font-weight: bold;
+    margin: 0;
+    overflow: hidden;
+    padding: 0;
+    text-align: left;
     text-decoration: underline;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .modal {
-    position: fixed;
-    inset: 0;
+    align-items: center;
     background: rgba(0,0,0,0.55);
     display: flex;
-    align-items: center;
+    inset: 0;
     justify-content: center;
     padding: 20px;
+    position: fixed;
     z-index: 999;
 }
 
-.hidden {
-    display: none;
-}
+.hidden { display: none; }
 
 .modal-content {
     background: white;
-    color: #002D62;
-    width: 100%;
-    max-width: 420px;
     border-radius: 14px;
+    border-top: 6px solid #EB6E1F;
+    box-shadow: 0 0 25px rgba(0,0,0,0.25);
+    color: #002D62;
+    max-width: 420px;
     padding: 20px;
     position: relative;
-    box-shadow: 0 0 25px rgba(0,0,0,0.25);
-    border-top: 6px solid #EB6E1F;
+    width: 100%;
 }
 
 .modal-close {
-    position: absolute;
-    top: 8px;
-    right: 10px;
     background: #EB6E1F;
     border-radius: 50%;
-    width: 34px;
+    font-size: 22px;
     height: 34px;
     padding: 0;
-    font-size: 22px;
+    position: absolute;
+    right: 10px;
+    top: 8px;
+    width: 34px;
 }
 
 .lineup-list {
-    text-align: left;
     padding-left: 28px;
+    text-align: left;
 }
 
-.lineup-list li {
-    margin: 10px 0;
-}
-
-.lineup-player {
-    font-weight: bold;
-}
-
+.lineup-list li { margin: 10px 0; }
+.lineup-player { font-weight: bold; }
 .lineup-position {
-    float: right;
     color: #EB6E1F;
+    float: right;
     font-weight: bold;
+}
+
+@media (min-width: 1000px) {
+    #eventList {
+        margin: 15px auto 0;
+        max-width: 1000px;
+    }
+
+    #status,
+    #batterInfo {
+        margin-left: auto;
+        margin-right: auto;
+        max-width: 1000px;
+    }
+}
+
+@media (max-width: 520px) {
+    body { padding: 12px; }
+    h1 { font-size: 22px; }
+    .game-picker { margin-top: 16px; padding: 20px 14px; }
+    .navigation-controls button { font-size: 13px; padding: 10px 11px; }
+    .count-line { gap: 16px; }
+    .rhe-header,
+    .rhe-row { grid-template-columns: minmax(112px, 1fr) 38px 38px 38px; }
 }

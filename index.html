@@ -1,79 +1,60 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>WPBL Spoiler-Free Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="style.css?v=5">
-<link rel="apple-touch-icon" href="icon.PNG">
-<link rel="icon" type="image/png" href="icon.PNG">
+    <link rel="stylesheet" href="style.css?v=6">
+    <link rel="apple-touch-icon" href="icon.PNG">
+    <link rel="icon" type="image/png" href="icon.PNG">
 </head>
 
 <body>
+    <h1>&#9918; Julie's WPBL Game Day &#9918;</h1>
 
-    <main class="app">
-
-        <section id="gamePicker" class="game-picker">
-            <h1>⚾ Julie's WPBL Game Day ⚾</h1>
-            <p>Choose a game</p>
-
-            <div class="date-controls">
-                <button onclick="showGamesForDate('yesterday')">Yesterday</button>
-                <button onclick="showGamesForDate('today')">Today</button>
-
-                <br><br>
-
-                <input type="date" id="pickerDate">
-                <button onclick="showGamesForDate('picked')">Load Date</button>
-            </div>
-
-            <div id="gameChoices"></div>
-        </section>
-
-
-        <section id="trackerScreen" class="hidden">
-
-            <button onclick="returnToGamePicker()">
-                ← Choose Another Game
+    <section id="gamePicker" class="game-picker">
+        <h2>Which game do you want?</h2>
+        <div class="date-controls">
+            <button class="today-game" onclick="showGamesForDate('today')">
+                <strong>Today's Games</strong>
+                <span>Choose from today's WPBL schedule</span>
             </button>
-
-            <h1>⚾ Julie's WPBL Game Day ⚾</h1>
-
-            <button onclick="previousEvent()">
-                Previous Event
-            </button>
-
-            <button onclick="nextAtBat()">
-                Next At-Bat
-            </button>
-
-            <button onclick="nextInning()">
-                Next Inning
-            </button>
-
-            <div id="status">
-                Loading...
-            </div>
-
-            <button id="batterInfo" onclick="nextEvent()">
-                Batter info will appear here.
-            </button>
-
-            <div id="eventList"></div>
-
-        </section>
-
-
-        <div id="lineupModal" class="modal hidden">
-            <div class="modal-content">
-                <button class="modal-close" onclick="closeLineup()">×</button>
-                <h2 id="lineupTitle"></h2>
-                <div id="lineupBody"></div>
+            <button onclick="showGamesForDate('yesterday')">Yesterday's Games</button>
+            <div class="date-picker-row">
+                <input type="date" id="pickerDate" aria-label="Game date">
+                <button onclick="showGamesForDate('picked')">Choose Date</button>
             </div>
         </div>
+        <div id="gameChoices"></div>
+    </section>
 
+    <main id="trackerScreen" class="hidden">
+        <button class="change-game" onclick="returnToGamePicker()">&larr; Choose Another Game</button>
+
+        <div class="navigation-controls">
+            <button class="previous-nav" onclick="previousEvent()">Previous Event</button>
+            <button class="forward-nav" onclick="nextAtBat()">Next At-Bat</button>
+            <button class="forward-nav" onclick="nextInning()">Next Half-Inning</button>
+            <button class="jump-live" onclick="jumpToLive()">Jump to Live</button>
+        </div>
+
+        <div id="status">Loading...</div>
+
+        <button id="batterInfo" onclick="nextEvent()">
+            Batter info will appear here.
+        </button>
+
+        <div id="eventList"></div>
     </main>
 
-    <script src="script.js?v=8"></script>
+    <div id="lineupModal" class="modal hidden">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeLineup()" aria-label="Close lineup">&times;</button>
+            <h2 id="lineupTitle"></h2>
+            <div id="lineupBody"></div>
+        </div>
+    </div>
 
+    <script src="script.js?v=9"></script>
 </body>
 </html>

@@ -1,5 +1,17 @@
 const WPBL_API_BASE = "https://wpbl-api.4d8v7jw78c.workers.dev";
 
+// Two recognizable identity colors per club. One solid marker color is chosen
+// for each matchup by the same perceptual-contrast approach used by the Astros
+// tracker, then remains fixed for the entire game.
+const WPBL_TEAM_COLORS = {
+    "boston hunters": { primary: "#004B3D", alternate: "#E8DDC4" },
+    "los angeles queens": { primary: "#111111", alternate: "#C99A62" },
+    "new york heights": { primary: "#08265C", alternate: "#F4F7FB" },
+    "san francisco firebells": { primary: "#4B2A70", alternate: "#F21F32" }
+};
+
+const DEFAULT_TEAM_COLORS = { primary: "#64748B", alternate: "#CBD5E1" };
+
 let WPBL_GAMES = [];
 
 async function loadWPBLGames() {
@@ -36,6 +48,104 @@ let awayTeamName = "";
 let homeTeamName = "";
 let currentGameData = null;
 let currentGamePk = null;
+let selectedGameTeamColors = new Map();
+
+function normalizeTeamName(teamName = "") {
+    return teamName.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function getTeamColors(teamName) {
+    const normalized = normalizeTeamName(teamName);
+    const exact = WPBL_TEAM_COLORS[normalized];
+    if (exact) return exact;
+
+    const matchingKey = Object.keys(WPBL_TEAM_COLORS).find(key =>
+        normalized.includes(key) || key.includes(normalized)
+    );
+    return matchingKey ? WPBL_TEAM_COLORS[matchingKey] : DEFAULT_TEAM_COLORS;
+}
+
+function hexToRgb(hexColor) {
+    const hex = hexColor.replace("#", "");
+    return {
+        red: parseInt(hex.slice(0, 2), 16) / 255,
+        green: parseInt(hex.slice(2, 4), 16) / 255,
+        blue: parseInt(hex.slice(4, 6), 16) / 255
+    };
+}
+
+function relativeLuminance(hexColor) {
+    const { red, green, blue } = hexToRgb(hexColor);
+    const linearize = channel => channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4;
+    return 0.2126 * linearize(red) + 0.7152 * linearize(green) + 0.0722 * linearize(blue);
+}
+
+function rgbToLab(hexColor) {
+    const { red, green, blue } = hexToRgb(hexColor);
+    const linearize = channel => channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4;
+    const r = linearize(red);
+    const g = linearize(green);
+    const b = linearize(blue);
+    const x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+    const y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+    const z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+    const pivot = value => value > 0.008856 ? Math.cbrt(value) : 7.787 * value + 16 / 116;
+    return {
+        lightness: 116 * pivot(y) - 16,
+        a: 500 * (pivot(x) - pivot(y)),
+        b: 200 * (pivot(y) - pivot(z))
+    };
+}
+
+function perceptualColorDistance(firstColor, secondColor) {
+    const first = rgbToLab(firstColor);
+    const second = rgbToLab(secondColor);
+    return Math.hypot(
+        first.lightness - second.lightness,
+        first.a - second.a,
+        first.b - second.b
+    );
+}
+
+function getMatchupColorScore(firstColor, secondColor) {
+    const firstLuminance = relativeLuminance(firstColor);
+    const secondLuminance = relativeLuminance(secondColor);
+    let score = perceptualColorDistance(firstColor, secondColor) +
+        Math.abs(firstLuminance - secondLuminance) * 45;
+
+    if (firstLuminance < 0.12 && secondLuminance < 0.12) score -= 35;
+    if (firstLuminance > 0.82) score -= 28;
+    if (secondLuminance > 0.82) score -= 28;
+    return score;
+}
+
+function selectGameTeamColors(firstTeamName, secondTeamName) {
+    const firstIdentity = getTeamColors(firstTeamName);
+    const secondIdentity = getTeamColors(secondTeamName);
+    const firstCandidates = [firstIdentity.primary, firstIdentity.alternate];
+    const secondCandidates = [secondIdentity.primary, secondIdentity.alternate];
+    let bestPair = { first: firstCandidates[0], second: secondCandidates[0] };
+    let bestScore = -Infinity;
+
+    firstCandidates.forEach(firstColor => {
+        secondCandidates.forEach(secondColor => {
+            const score = getMatchupColorScore(firstColor, secondColor);
+            if (score > bestScore) {
+                bestScore = score;
+                bestPair = { first: firstColor, second: secondColor };
+            }
+        });
+    });
+
+    return new Map([
+        ["away", bestPair.first],
+        ["home", bestPair.second]
+    ]);
+}
 
 function getLocalDateString(date = new Date()) {
     const year = date.getFullYear();
@@ -115,6 +225,7 @@ function selectGame(gameId, gameDate) {
 
     events = [];
     revealedIndexes = [];
+    selectedGameTeamColors = new Map();
 
     document.getElementById("gamePicker").classList.add("hidden");
     document.getElementById("trackerScreen").classList.remove("hidden");
@@ -161,6 +272,7 @@ const homeTeam = feedData.teams.find(team => team.side === "home");
 
 awayTeamName = awayTeam?.name || "Away";
 homeTeamName = homeTeam?.name || "Home";
+selectedGameTeamColors = selectGameTeamColors(awayTeamName, homeTeamName);
 
 buildEvents(feedData)
 
@@ -264,7 +376,11 @@ function buildEvents(data) {
                 balls: balls,
                 strikes: strikes,
                 outs: play.outs,
-                pitchNumber: pitchIndex + 1
+                pitchNumber: pitchIndex + 1,
+                isPitch: true,
+                isResult: false,
+                battingSide: half === "TOP" ? "away" : "home",
+                teamColor: selectedGameTeamColors.get(half === "TOP" ? "away" : "home")
             });
         });
 
@@ -281,8 +397,12 @@ function buildEvents(data) {
                 outs: play.outs,
                 pitchNumber: null,
 
+                isPitch: false,
+                isResult: true,
+
                 eventType: play.event_type,
                 battingSide: half === "TOP" ? "away" : "home",
+                teamColor: selectedGameTeamColors.get(half === "TOP" ? "away" : "home"),
 
                 // We'll calculate spoiler-safe scores from runs scored,
                 // rather than exposing the live final/current score.
@@ -390,6 +510,13 @@ function updateStatus() {
     const currentIndex = getCurrentIndex();
 const score = getSpoilerFreeScore();
 const totals = getSpoilerFreeHitsErrors();
+
+    const activeEvent = currentIndex === -1 ? events[0] : events[currentIndex];
+    const trackerScreen = document.getElementById("trackerScreen");
+    trackerScreen.style.setProperty(
+        "--active-team-color",
+        activeEvent?.teamColor || "#64748B"
+    );
     
 
     
@@ -498,7 +625,8 @@ function addEventCard(index) {
     const icon = getEventIcon(event);
 
     const row = document.createElement("div");
-    row.className = "event-row";
+    row.className = `event-row team-event ${event.isPitch ? "low-emphasis" : "important-event"}`;
+    row.style.setProperty("--event-team-color", event.teamColor || "#64748B");
 
     row.innerHTML = `
         <span class="event-icon">${icon}</span>
@@ -595,6 +723,20 @@ function nextInning() {
     if (nextIndex < events.length) {
         revealIndex(nextIndex);
     }
+}
+
+function jumpToLive() {
+    if (events.length === 0) return;
+    const confirmed = confirm("Reveal every event currently available and jump to live?");
+    if (!confirmed) return;
+
+    const currentIndex = getCurrentIndex();
+    for (let index = currentIndex + 1; index < events.length; index++) {
+        revealedIndexes.push(index);
+        addEventCard(index);
+    }
+    saveProgress();
+    updateStatus();
 }
 function showLineup(teamSide) {
     if (!currentGameData) {
