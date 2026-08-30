@@ -30,7 +30,10 @@ WPBL_GAMES = (data.games || [])
         gameId: game.game_id,
         away: game.away_team_name,
         home: game.home_team_name,
-        time: game.scheduled_start
+        time: game.scheduled_start,
+        status: game.status || "",
+        completedAt: game.completed_at || "",
+        venue: game.venue || game.presto_data?.venue || ""
     }));
 
     showGamesForDate("today");
@@ -48,6 +51,7 @@ let awayTeamName = "";
 let homeTeamName = "";
 let currentGameData = null;
 let currentGamePk = null;
+let currentGameSchedule = null;
 let selectedGameTeamColors = new Map();
 
 function normalizeTeamName(teamName = "") {
@@ -219,6 +223,7 @@ function renderGameChoices(date) {
 
 function selectGame(gameId, gameDate) {
     selectedGameId = gameId;
+    currentGameSchedule = WPBL_GAMES.find(game => game.gameId === gameId) || null;
     GAME_DATE = gameDate;
 
     SAVE_KEY = `wpbl-tracker-${gameId}`;
@@ -237,6 +242,7 @@ function returnToGamePicker() {
     selectedGameId = null;
     currentGameData = null;
     currentGamePk = null;
+    currentGameSchedule = null;
 
     document.getElementById("trackerScreen").classList.add("hidden");
     document.getElementById("gamePicker").classList.remove("hidden");
@@ -331,16 +337,191 @@ function getRunsScored(play) {
 
     return Number(play.runs_scored) || 0;
 }
+
+const PLATE_APPEARANCE_EVENT_TYPES = new Set([
+    "double",
+    "fielders_choice",
+    "flyout",
+    "foul_out",
+    "groundout",
+    "hit_by_pitch",
+    "home_run",
+    "lineout",
+    "out",
+    "popup",
+    "sacrifice",
+    "single",
+    "strikeout",
+    "triple",
+    "walk"
+]);
+
+function isPlateAppearanceComplete(play) {
+    const eventType = String(play.event_type || "").toLowerCase();
+    if (PLATE_APPEARANCE_EVENT_TYPES.has(eventType)) return true;
+
+    const narrative = String(play.narrative || "");
+    return /\b(?:walked|struck out|singled|doubled|tripled|homered|hit by pitch|reached first|reached on|grounded out|flied out|lined out|popped out|fouled out|sacrifice)\b/i.test(narrative);
+}
+
+function getPlayStartingBases(play = {}) {
+    return {
+        first: play.first_base || "",
+        second: play.second_base || "",
+        third: play.third_base || ""
+    };
+}
+
+function hasSameHalfInning(firstPlay, secondPlay) {
+    return Boolean(secondPlay) &&
+        Number(firstPlay.inning) === Number(secondPlay.inning) &&
+        String(firstPlay.half || "").toLowerCase() === String(secondPlay.half || "").toLowerCase();
+}
+
+function removeRunnerFromBases(bases, runnerName) {
+    Object.keys(bases).forEach(base => {
+        if (bases[base] === runnerName) bases[base] = "";
+    });
+}
+
+function setRunnerDestination(bases, runnerName, destination) {
+    if (!runnerName) return;
+    removeRunnerFromBases(bases, runnerName);
+    if (destination && destination !== "home") bases[destination] = runnerName;
+}
+
+function deriveFinalBasesFromNarrative(play) {
+    const narrative = String(play.narrative || "");
+    const bases = { ...getPlayStartingBases(play) };
+    if (!narrative) return null;
+
+    const knownNames = new Set([
+        play.batter_name,
+        bases.first,
+        bases.second,
+        bases.third
+    ].filter(Boolean));
+    const escapedNames = [...knownNames]
+        .sort((a, b) => b.length - a.length)
+        .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const namePattern = escapedNames.length ? `(${escapedNames.join("|")})` : null;
+
+    if (namePattern) {
+        const destinationPattern = new RegExp(`${namePattern} (?:advanced|stole|moved) to (first|second|third)`, "gi");
+        let destinationMatch;
+        while ((destinationMatch = destinationPattern.exec(narrative))) {
+            setRunnerDestination(bases, destinationMatch[1], destinationMatch[2].toLowerCase());
+        }
+
+        const removedPattern = new RegExp(`${namePattern} (?:scored|was out|out at|picked off|caught stealing)`, "gi");
+        let removedMatch;
+        while ((removedMatch = removedPattern.exec(narrative))) {
+            removeRunnerFromBases(bases, removedMatch[1]);
+        }
+    }
+
+    const batter = play.batter_name || "";
+    if (/\b(?:homered|home run)\b/i.test(narrative)) {
+        Object.keys(bases).forEach(base => { bases[base] = ""; });
+    } else if (/\btripled\b/i.test(narrative)) {
+        setRunnerDestination(bases, batter, "third");
+    } else if (/\bdoubled\b/i.test(narrative)) {
+        setRunnerDestination(bases, batter, "second");
+    } else if (/\b(?:singled|walked|hit by pitch|reached first|reached on|fielder'?s choice)\b/i.test(narrative)) {
+        setRunnerDestination(bases, batter, "first");
+    } else if (isPlateAppearanceComplete(play)) {
+        removeRunnerFromBases(bases, batter);
+    }
+
+    return bases;
+}
+
+function getFinalBasesForPlay(play, nextPlay) {
+    if (nextPlay && !hasSameHalfInning(play, nextPlay)) {
+        return { first: "", second: "", third: "" };
+    }
+
+    // WPBL supplies each play's starting snapshot. The next play's snapshot is
+    // therefore the authoritative final destination state for this play.
+    if (hasSameHalfInning(play, nextPlay)) return getPlayStartingBases(nextPlay);
+
+    // During a live game's newest play there may be no following snapshot yet.
+    // Use only destinations stated explicitly in the narrative.
+    return deriveFinalBasesFromNarrative(play);
+}
+
+function formatDateTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+    });
+}
+
+function findPitchingDecision(teams, decisionKey) {
+    for (const team of teams) {
+        const player = (team.players || []).find(candidate => candidate.pitching?.[decisionKey]);
+        if (player) return player.name;
+    }
+    return "";
+}
+
+function buildGameCompleteEvent(data) {
+    const teams = data.teams || [];
+    const awayTeam = teams.find(team => team.side === "away");
+    const homeTeam = teams.find(team => team.side === "home");
+    const teamSummaries = [awayTeam, homeTeam].filter(Boolean).map(team => ({
+        name: team.name,
+        runs: team.totals?.runs,
+        hits: team.totals?.hits,
+        errors: team.totals?.errors,
+        leftOnBase: team.totals?.left_on_base,
+        pitchers: (team.players || [])
+            .filter(player => player.pitching?.pitches !== undefined)
+            .map(player => ({ name: player.name, pitches: player.pitching.pitches }))
+    }));
+
+    return {
+        kind: "game-complete",
+        inning: "Game Complete",
+        text: "Game Complete",
+        isPitch: false,
+        isResult: false,
+        isPlateAppearanceResult: false,
+        atBat: Number.MAX_SAFE_INTEGER,
+        battingSide: "",
+        teamColor: "#64748B",
+        bases: { first: "", second: "", third: "" },
+        details: {
+            scheduledStart: formatDateTime(currentGameSchedule?.time),
+            venue: currentGameSchedule?.venue || "",
+            winningPitcher: findPitchingDecision(teams, "win"),
+            losingPitcher: findPitchingDecision(teams, "loss"),
+            savePitcher: findPitchingDecision(teams, "save"),
+            teams: teamSummaries
+        }
+    };
+}
+
 function buildEvents(data) {
     events = [];
 
     const plays = data.plays || [];
+
+    let plateAppearanceNumber = 0;
 
     plays.forEach((play, playNumber) => {
         const inning = play.inning;
         const half = (play.half || "").toUpperCase();
         const batter = play.batter_name || "";
         const pitcher = play.pitcher_name || "";
+        const startingBases = getPlayStartingBases(play);
+        const finalBases = getFinalBasesForPlay(play, plays[playNumber + 1]);
+        const completesPlateAppearance = isPlateAppearanceComplete(play);
 
         // Add individual pitches first
         const pitchEvents = play.pitch_events || [];
@@ -363,16 +544,18 @@ function buildEvents(data) {
             } else if (code === "F") {
                 if (strikes < 2) strikes++;
                 text = "Foul";
-            } else if (code === "P") {
-    text = pitch.description || "Pitch";
-}
+            } else if (code === "P" && pitch.type === "pitchout") {
+                // Presto labels its terminal ball-in-play marker as pitchout.
+                // Keep the feed identity intact and correct only the display.
+                text = "Ball in play";
+            }
 
             events.push({
                 inning: `${half} ${inning}`,
                 batter: batter,
                 pitcher: pitcher,
                 text: text,
-                atBat: playNumber,
+                atBat: plateAppearanceNumber,
                 balls: balls,
                 strikes: strikes,
                 outs: play.outs,
@@ -380,7 +563,8 @@ function buildEvents(data) {
                 isPitch: true,
                 isResult: false,
                 battingSide: half === "TOP" ? "away" : "home",
-                teamColor: selectedGameTeamColors.get(half === "TOP" ? "away" : "home")
+                teamColor: selectedGameTeamColors.get(half === "TOP" ? "away" : "home"),
+                bases: startingBases
             });
         });
 
@@ -391,18 +575,20 @@ function buildEvents(data) {
                 batter: batter,
                 pitcher: pitcher,
                 text: `RESULT: ${play.narrative}`,
-                atBat: playNumber,
+                atBat: plateAppearanceNumber,
                 balls: play.balls,
                 strikes: play.strikes,
                 outs: play.outs,
                 pitchNumber: null,
 
                 isPitch: false,
-                isResult: true,
+                isResult: completesPlateAppearance,
+                isPlateAppearanceResult: completesPlateAppearance,
 
                 eventType: play.event_type,
                 battingSide: half === "TOP" ? "away" : "home",
                 teamColor: selectedGameTeamColors.get(half === "TOP" ? "away" : "home"),
+                bases: finalBases,
 
                 // We'll calculate spoiler-safe scores from runs scored,
                 // rather than exposing the live final/current score.
@@ -412,7 +598,13 @@ function buildEvents(data) {
                 isScoringPlay: play.is_scoring_play || false
             });
         }
+
+        if (completesPlateAppearance) plateAppearanceNumber++;
     });
+
+    if (data.game_status === "Final" || data.status?.complete === true) {
+        events.push(buildGameCompleteEvent(data));
+    }
 }
 
 function saveProgress() {
@@ -506,12 +698,54 @@ function getPitcherPitchCount(pitcherName) {
 
     return count;
 }
+
+function getDisplayState() {
+    const currentIndex = getCurrentIndex();
+    if (events.length === 0) return null;
+    if (currentIndex === -1) return { event: events[0], preview: true };
+
+    const current = events[currentIndex];
+    if (current.isPlateAppearanceResult) {
+        const nextPlateAppearance = events.slice(currentIndex + 1).find(event =>
+            event.kind !== "game-complete" && event.atBat > current.atBat
+        );
+        if (nextPlateAppearance) {
+            return { event: nextPlateAppearance, preview: true, previous: current };
+        }
+    }
+
+    return { event: current, preview: false, previous: null };
+}
+
+function renderBaseDiamond(bases) {
+    if (!bases) {
+        return '<div class="base-state-unavailable">Base state updating</div>';
+    }
+
+    const occupied = key => bases[key] ? " occupied" : "";
+    const label = [
+        bases.first && `First: ${bases.first}`,
+        bases.second && `Second: ${bases.second}`,
+        bases.third && `Third: ${bases.third}`
+    ].filter(Boolean).join(", ") || "Bases empty";
+
+    return `
+        <div class="base-diamond" aria-label="${label}" title="${label}">
+            <span class="base second${occupied("second")}"></span>
+            <span class="base third${occupied("third")}"></span>
+            <span class="base first${occupied("first")}"></span>
+            <span class="home-plate"></span>
+        </div>
+    `;
+}
+
 function updateStatus() {
     const currentIndex = getCurrentIndex();
 const score = getSpoilerFreeScore();
 const totals = getSpoilerFreeHitsErrors();
 
-    const activeEvent = currentIndex === -1 ? events[0] : events[currentIndex];
+    const displayState = getDisplayState();
+    const activeEvent = displayState?.event;
     const trackerScreen = document.getElementById("trackerScreen");
     trackerScreen.style.setProperty(
         "--active-team-color",
@@ -551,7 +785,16 @@ document.getElementById("status").innerHTML = `
         return;
     }
 
-    const event = events[currentIndex];
+    const event = displayState?.event;
+    if (!event) return;
+
+    if (event.kind === "game-complete") {
+        document.getElementById("batterInfo").innerHTML = `
+            <div class="inning-line">Game Complete</div>
+            <div class="completion-message">Every available event has been revealed.</div>
+        `;
+        return;
+    }
     
     const pitcherPitchCount = getPitcherPitchCount(event.pitcher);
     
@@ -570,8 +813,8 @@ document.getElementById("status").innerHTML = `
             ? `Pitch #${event.pitchNumber}`
             : "Plate appearance result";
 
-    const balls = event.balls ?? 0;
-const strikes = event.strikes ?? 0;
+    const balls = displayState.preview ? 0 : (event.balls ?? 0);
+const strikes = displayState.preview ? 0 : (event.strikes ?? 0);
 const outs = event.outs ?? 0;
 
 const ballDots =
@@ -587,6 +830,7 @@ const outDots =
     "○ ".repeat(3 - outs);
 
 document.getElementById("batterInfo").innerHTML = `
+    ${displayState.preview && currentIndex >= 0 ? '<div class="next-batter-label">Next Batter</div>' : ''}
     <div class="inning-line">${event.inning}</div>
 
     <div class="matchup-line">
@@ -600,10 +844,15 @@ document.getElementById("batterInfo").innerHTML = `
 <span><strong>K</strong> <span class="count-dots">${strikeDots}</span></span>
 <span>❌ <span class="count-dots">${outDots}</span></span>
     </div>
+
+    <div class="between-play-info">
+        ${renderBaseDiamond(event.bases)}
+    </div>
 `;
 }
 
 function getEventIcon(event) {
+    if (event.kind === "game-complete") return "✓";
     const text = event.text.toLowerCase();
 
     if (event.pitchNumber) {
@@ -625,6 +874,62 @@ function addEventCard(index) {
     const icon = getEventIcon(event);
 
     const row = document.createElement("div");
+
+    if (event.kind === "game-complete") {
+        row.className = "event-row game-complete-card";
+        const details = event.details;
+        const optionalDetail = (label, value) => value
+            ? `<div><dt>${label}</dt><dd>${value}</dd></div>`
+            : "";
+        const teamSummaryHtml = details.teams.map(team => {
+            const rhe = [team.runs, team.hits, team.errors].every(value => value !== undefined && value !== null)
+                ? `${team.runs} R · ${team.hits} H · ${team.errors} E`
+                : "";
+            const leftOnBase = team.leftOnBase !== undefined && team.leftOnBase !== null
+                ? ` · ${team.leftOnBase} LOB`
+                : "";
+            return `
+                <section class="postgame-team">
+                    <h4>${team.name}</h4>
+                    ${rhe ? `<p>${rhe}${leftOnBase}</p>` : ""}
+                </section>
+            `;
+        }).join("");
+        const pitchCountHtml = details.teams.map(team => `
+            <section class="pitch-count-team">
+                <h4>${team.name}</h4>
+                <ul>
+                    ${team.pitchers.map(pitcher => `
+                        <li><span>${pitcher.name}</span><strong>${pitcher.pitches} pitches</strong></li>
+                    `).join("")}
+                </ul>
+            </section>
+        `).join("");
+
+        row.innerHTML = `
+            <div class="game-complete-title">
+                <span class="event-icon">${icon}</span>
+                <span>Game Complete</span>
+            </div>
+            <div class="postgame-team-grid">${teamSummaryHtml}</div>
+            <dl class="game-complete-details">
+                ${optionalDetail("Scheduled start", details.scheduledStart)}
+                ${optionalDetail("Venue", details.venue)}
+                ${optionalDetail("Winning pitcher", details.winningPitcher)}
+                ${optionalDetail("Losing pitcher", details.losingPitcher)}
+                ${optionalDetail("Save", details.savePitcher)}
+                ${pitchCountHtml ? `
+                    <div class="wide">
+                        <dt>Official pitch counts</dt>
+                        <dd class="pitch-counts">${pitchCountHtml}</dd>
+                    </div>
+                ` : ""}
+            </dl>
+        `;
+        document.getElementById("eventList").prepend(row);
+        return;
+    }
+
     row.className = `event-row team-event ${event.isPitch ? "low-emphasis" : "important-event"}`;
     row.style.setProperty("--event-team-color", event.teamColor || "#64748B");
 
@@ -649,6 +954,22 @@ function redrawFeed() {
 function revealIndex(index) {
     revealedIndexes.push(index);
     addEventCard(index);
+    saveProgress();
+    updateStatus();
+}
+
+function revealThrough(targetIndex) {
+    const currentIndex = getCurrentIndex();
+    const lastIndex = Math.min(targetIndex, events.length - 1);
+    if (lastIndex <= currentIndex) {
+        updateStatus();
+        return;
+    }
+
+    for (let index = currentIndex + 1; index <= lastIndex; index++) {
+        revealedIndexes.push(index);
+        addEventCard(index);
+    }
     saveProgress();
     updateStatus();
 }
@@ -681,48 +1002,55 @@ function previousEvent() {
 
 function nextAtBat() {
     const currentIndex = getCurrentIndex();
+    if (events.length === 0) return;
 
-    if (currentIndex === -1) {
-        nextEvent();
-        return;
-    }
-
-    const currentAtBat = events[currentIndex].atBat;
-    let nextIndex = currentIndex + 1;
-
-    while (
-        nextIndex < events.length &&
-        events[nextIndex].atBat === currentAtBat
+    let scopeStart = currentIndex === -1 ? 0 : currentIndex;
+    if (
+        currentIndex >= 0 &&
+        events[currentIndex].isPlateAppearanceResult &&
+        events[currentIndex + 1]?.kind !== "game-complete"
     ) {
-        nextIndex++;
+        scopeStart = currentIndex + 1;
     }
 
-    if (nextIndex < events.length) {
-        revealIndex(nextIndex);
+    const targetAtBat = events[scopeStart]?.atBat;
+    if (targetAtBat === undefined) return;
+    let boundaryIndex = scopeStart;
+    while (
+        boundaryIndex < events.length &&
+        events[boundaryIndex].atBat === targetAtBat
+    ) {
+        boundaryIndex++;
     }
+    revealThrough(boundaryIndex - 1);
 }
 
 function nextInning() {
     const currentIndex = getCurrentIndex();
+    if (events.length === 0) return;
 
-    if (currentIndex === -1) {
-        nextEvent();
-        return;
-    }
-
-    const currentInning = events[currentIndex].inning;
-    let nextIndex = currentIndex + 1;
-
-    while (
-        nextIndex < events.length &&
-        events[nextIndex].inning === currentInning
+    let scopeStart = currentIndex === -1 ? 0 : currentIndex;
+    const upcomingEvent = events[currentIndex + 1];
+    if (
+        currentIndex >= 0 &&
+        events[currentIndex].isPlateAppearanceResult &&
+        upcomingEvent &&
+        upcomingEvent.kind !== "game-complete" &&
+        upcomingEvent.inning !== events[currentIndex].inning
     ) {
-        nextIndex++;
+        scopeStart = currentIndex + 1;
     }
 
-    if (nextIndex < events.length) {
-        revealIndex(nextIndex);
+    const targetInning = events[scopeStart]?.inning;
+    if (!targetInning || targetInning === "Game Complete") return;
+    let boundaryIndex = scopeStart;
+    while (
+        boundaryIndex < events.length &&
+        events[boundaryIndex].inning === targetInning
+    ) {
+        boundaryIndex++;
     }
+    revealThrough(boundaryIndex - 1);
 }
 
 function jumpToLive() {
@@ -730,13 +1058,7 @@ function jumpToLive() {
     const confirmed = confirm("Reveal every event currently available and jump to live?");
     if (!confirmed) return;
 
-    const currentIndex = getCurrentIndex();
-    for (let index = currentIndex + 1; index < events.length; index++) {
-        revealedIndexes.push(index);
-        addEventCard(index);
-    }
-    saveProgress();
-    updateStatus();
+    revealThrough(events.length - 1);
 }
 function showLineup(teamSide) {
     if (!currentGameData) {
