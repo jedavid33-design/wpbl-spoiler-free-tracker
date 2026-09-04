@@ -749,6 +749,42 @@ function getProviderPitcherPitchCount(pitcherName) {
     return null;
 }
 
+function getRevealedPitcherPitchCount(pitcherName) {
+    if (!pitcherName) return null;
+
+    const normalizedPitcher = normalizeTeamName(pitcherName);
+    let count = 0;
+    let pitcherHasRevealedAction = false;
+
+    revealedIndexes.forEach(index => {
+        const event = events[index];
+        if (!event || normalizeTeamName(event.pitcher || "") !== normalizedPitcher) return;
+
+        pitcherHasRevealedAction = true;
+        if (event.isPitch) count++;
+    });
+
+    return pitcherHasRevealedAction ? count : null;
+}
+
+function isCaughtUpToLiveEdge() {
+    if (events.length === 0) return false;
+
+    let liveEdgeIndex = events.length - 1;
+    if (events[liveEdgeIndex]?.kind === "game-complete") liveEdgeIndex--;
+
+    return liveEdgeIndex >= 0 && getCurrentIndex() >= liveEdgeIndex;
+}
+
+function getDisplayPitcherPitchCount(pitcherName) {
+    if (isCaughtUpToLiveEdge()) {
+        const providerCount = getProviderPitcherPitchCount(pitcherName);
+        if (providerCount !== null) return providerCount;
+    }
+
+    return getRevealedPitcherPitchCount(pitcherName);
+}
+
 function getDisplayState() {
     const currentIndex = getCurrentIndex();
     if (events.length === 0) return null;
@@ -868,8 +904,8 @@ document.getElementById("batterInfo").innerHTML = `
 
     <div class="matchup-line">
         <strong>${event.pitcher}${(() => {
-            const providerPitchCount = getProviderPitcherPitchCount(event.pitcher);
-            return providerPitchCount === null ? "" : ` · ${providerPitchCount} pitches`;
+            const pitchCount = getDisplayPitcherPitchCount(event.pitcher);
+            return pitchCount === null ? "" : ` · ${pitchCount} pitches`;
         })()}</strong>
         <span> vs </span>
         <strong>${event.batter}</strong>
