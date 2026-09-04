@@ -729,21 +729,24 @@ function getSpoilerFreeHitsErrors() {
         homeErrors
     };
 }
-function getPitcherPitchCount(pitcherName) {
-    let count = 0;
+function getProviderPitcherPitchCount(pitcherName) {
+    if (!pitcherName || !currentGameData) return null;
 
-    revealedIndexes.forEach(index => {
-        const event = events[index];
+    const normalizedPitcher = normalizeTeamName(pitcherName);
+    const teams = currentGameData.teams || [];
 
-        if (
-            event.pitcher === pitcherName &&
-            event.pitchNumber
-        ) {
-            count++;
-        }
-    });
+    for (const team of teams) {
+        const player = (team.players || []).find(candidate =>
+            normalizeTeamName(candidate.name || candidate.short_name || "") === normalizedPitcher
+        );
 
-    return count;
+        if (!player) continue;
+
+        const pitches = Number(player.pitching?.pitches);
+        if (Number.isFinite(pitches) && pitches >= 0) return pitches;
+    }
+
+    return null;
 }
 
 function getDisplayState() {
@@ -864,7 +867,10 @@ document.getElementById("batterInfo").innerHTML = `
     <div class="inning-line">${event.inning}</div>
 
     <div class="matchup-line">
-        <strong>${event.pitcher}</strong>
+        <strong>${event.pitcher}${(() => {
+            const providerPitchCount = getProviderPitcherPitchCount(event.pitcher);
+            return providerPitchCount === null ? "" : ` · ${providerPitchCount} pitches`;
+        })()}</strong>
         <span> vs </span>
         <strong>${event.batter}</strong>
     </div>
