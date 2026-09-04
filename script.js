@@ -364,6 +364,49 @@ function isPlateAppearanceComplete(play) {
     return /\b(?:walked|struck out|singled|doubled|tripled|homered|hit by pitch|reached first|reached on|grounded out|flied out|lined out|popped out|fouled out|sacrifice)\b/i.test(narrative);
 }
 
+function inferOutsRecorded(play = {}) {
+    const eventType = String(play.event_type || "").toLowerCase();
+    const narrative = String(play.narrative || "");
+
+    if (/triple[ _-]?play/i.test(eventType) || /\btriple play\b/i.test(narrative)) return 3;
+    if (/double[ _-]?play/i.test(eventType) || /\bdouble play\b/i.test(narrative)) return 2;
+
+    const oneOutTypes = new Set([
+        "strikeout", "groundout", "flyout", "lineout", "popup",
+        "foul_out", "out", "sacrifice"
+    ]);
+    if (oneOutTypes.has(eventType)) return 1;
+
+    if (/\b(?:struck out|grounded out|flied out|lined out|popped out|fouled out|caught stealing|picked off|out at)\b/i.test(narrative)) {
+        return 1;
+    }
+
+    return 0;
+}
+
+function getPostPlayOuts(play, nextPlay) {
+    const startingOuts = Number(play?.outs);
+    const safeStartingOuts = Number.isFinite(startingOuts) ? startingOuts : 0;
+
+    // Presto reports the out count at the start of a play. The next play in the
+    // same half-inning is the best authoritative post-play snapshot when present.
+    if (hasSameHalfInning(play, nextPlay)) {
+        const nextOuts = Number(nextPlay?.outs);
+        if (Number.isFinite(nextOuts) && nextOuts >= safeStartingOuts) {
+            return Math.min(3, nextOuts);
+        }
+    }
+
+    // If Presto has already advanced to the other half, this play ended the half.
+    if (nextPlay && !hasSameHalfInning(play, nextPlay)) {
+        return 3;
+    }
+
+    // Live edge: the next batter may not exist yet. Infer only from explicit
+    // out-producing result text/types, including multi-out plays.
+    return Math.min(3, safeStartingOuts + inferOutsRecorded(play));
+}
+
 function getPlayStartingBases(play = {}) {
     return {
         first: play.first_base || "",
@@ -520,8 +563,10 @@ function buildEvents(data) {
         const batter = play.batter_name || "";
         const pitcher = play.pitcher_name || "";
         const startingBases = getPlayStartingBases(play);
-        const finalBases = getFinalBasesForPlay(play, plays[playNumber + 1]);
+        const nextPlay = plays[playNumber + 1];
+        const finalBases = getFinalBasesForPlay(play, nextPlay);
         const completesPlateAppearance = isPlateAppearanceComplete(play);
+        const postPlayOuts = getPostPlayOuts(play, nextPlay);
 
         // Add individual pitches first
         const pitchEvents = play.pitch_events || [];
@@ -578,7 +623,7 @@ function buildEvents(data) {
                 atBat: plateAppearanceNumber,
                 balls: play.balls,
                 strikes: play.strikes,
-                outs: play.outs,
+                outs: postPlayOuts,
                 pitchNumber: null,
 
                 isPitch: false,
@@ -586,6 +631,8 @@ function buildEvents(data) {
                 isPlateAppearanceResult: completesPlateAppearance,
 
                 eventType: play.event_type,
+                rawNarrative: play.narrative,
+                playSequence: play.sequence,
                 battingSide: half === "TOP" ? "away" : "home",
                 teamColor: selectedGameTeamColors.get(half === "TOP" ? "away" : "home"),
                 bases: finalBases,
@@ -796,23 +843,6 @@ document.getElementById("status").innerHTML = `
         return;
     }
     
-    const pitcherPitchCount = getPitcherPitchCount(event.pitcher);
-    
-    const countText =
-        event.balls !== undefined && event.strikes !== undefined
-            ? `${event.balls}-${event.strikes}`
-            : "N/A";
-
-    const outsText =
-        event.outs !== undefined
-            ? `${event.outs} out(s)`
-            : "N/A";
-
-    const pitchText =
-        event.pitchNumber
-            ? `Pitch #${event.pitchNumber}`
-            : "Plate appearance result";
-
     const balls = displayState.preview ? 0 : (event.balls ?? 0);
 const strikes = displayState.preview ? 0 : (event.strikes ?? 0);
 const outs = event.outs ?? 0;
@@ -834,7 +864,7 @@ document.getElementById("batterInfo").innerHTML = `
     <div class="inning-line">${event.inning}</div>
 
     <div class="matchup-line">
-        <strong>${event.pitcher} (${pitcherPitchCount})</strong>
+        <strong>${event.pitcher}</strong>
         <span> vs </span>
         <strong>${event.batter}</strong>
     </div>
@@ -1060,6 +1090,92 @@ function jumpToLive() {
 
     revealThrough(events.length - 1);
 }
+function normalizePlayerName(name = "") {
+    return String(name)
+        .toLowerCase()
+        .replace(/[.’']/g, "")
+        .replace(/[^a-z0-9\u00c0-\u024f]+/g, " ")
+        .trim();
+}
+
+function getTeamPlayer(team, name) {
+    const target = normalizePlayerName(name);
+    if (!target) return null;
+    return (team.players || []).find(player =>
+        normalizePlayerName(player.name) === target ||
+        normalizePlayerName(player.short_name) === target
+    ) || null;
+}
+
+function reconstructLineupAtRevealedPoint(team) {
+    const lineup = (team.starters || [])
+        .filter(player => {
+            const spot = Number(player.spot);
+            return spot >= 1 && spot <= 9;
+        })
+        .map(player => ({ ...player }))
+        .sort((a, b) => Number(a.spot) - Number(b.spot));
+
+    const findActiveIndex = name => {
+        const target = normalizePlayerName(name);
+        return lineup.findIndex(player => normalizePlayerName(player.name) === target);
+    };
+
+    const replaceInBattingSpot = (incomingName, outgoingName, position) => {
+        if (!incomingName || !outgoingName) return;
+        const incomingRoster = getTeamPlayer(team, incomingName);
+        const outgoingIndex = findActiveIndex(outgoingName);
+
+        // Do not infer a substitution unless the incoming player belongs to this
+        // team and the outgoing player is actually active in this batting order.
+        if (!incomingRoster || outgoingIndex < 0) return;
+
+        lineup[outgoingIndex] = {
+            ...lineup[outgoingIndex],
+            name: incomingRoster.name || incomingName,
+            uniform: incomingRoster.uniform || "",
+            position: position || lineup[outgoingIndex].position || ""
+        };
+    };
+
+    const changePosition = (playerName, position) => {
+        if (!playerName || !position) return;
+        if (!getTeamPlayer(team, playerName)) return;
+        const index = findActiveIndex(playerName);
+        if (index >= 0) lineup[index].position = position;
+    };
+
+    revealedIndexes.forEach(index => {
+        const narrative = String(events[index]?.rawNarrative || "").trim();
+        if (!narrative) return;
+
+        let match = narrative.match(/^(.+?)\s+pinch hit for\s+(.+?)[.]?$/i);
+        if (match) {
+            replaceInBattingSpot(match[1].trim(), match[2].trim(), "ph");
+            return;
+        }
+
+        match = narrative.match(/^(.+?)\s+pinch ran for\s+(.+?)[.]?$/i);
+        if (match) {
+            replaceInBattingSpot(match[1].trim(), match[2].trim(), "pr");
+            return;
+        }
+
+        match = narrative.match(/^(.+?)\s+to\s+([a-z0-9]+)\s+for\s+(.+?)[.]?$/i);
+        if (match) {
+            replaceInBattingSpot(match[1].trim(), match[3].trim(), match[2].toLowerCase());
+            return;
+        }
+
+        match = narrative.match(/^(.+?)\s+to\s+([a-z0-9]+)[.]?$/i);
+        if (match) {
+            changePosition(match[1].trim(), match[2].toLowerCase());
+        }
+    });
+
+    return lineup;
+}
+
 function showLineup(teamSide) {
     if (!currentGameData) {
         alert("Game data is still loading.");
@@ -1075,18 +1191,13 @@ function showLineup(teamSide) {
         return;
     }
 
-    const lineup = (team.starters || [])
-        .filter(player => {
-            const spot = Number(player.spot);
-            return spot >= 1 && spot <= 9;
-        })
-        .sort((a, b) => Number(a.spot) - Number(b.spot));
+    const lineup = reconstructLineupAtRevealedPoint(team);
 
     let lineupHtml = "";
 
     if (lineup.length === 0) {
         lineupHtml =
-            "<p>Starting lineup is not available yet.</p>";
+            "<p>Lineup is not available yet.</p>";
     } else {
         lineupHtml = "<ol class='lineup-list'>";
 
@@ -1114,7 +1225,7 @@ function showLineup(teamSide) {
     }
 
     document.getElementById("lineupTitle").innerHTML =
-        `${team.name} Starting Lineup`;
+        `${team.name} Lineup at Revealed Point`;
 
     document.getElementById("lineupBody").innerHTML =
         lineupHtml;
