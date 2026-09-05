@@ -18,23 +18,72 @@ async function loadWPBLGames() {
     const response = await fetch(`${WPBL_API_BASE}/games`);
     const data = await response.json();
 
-WPBL_GAMES = (data.games || [])
-    .filter(game =>
-        game.game_id &&
-        game.scheduled_start &&
-        game.away_team_name &&
-        game.home_team_name
-    )
-    .map(game => ({
-        date: game.scheduled_start.split("T")[0],
-        gameId: game.game_id,
-        away: game.away_team_name,
-        home: game.home_team_name,
-        time: game.scheduled_start,
-        status: game.status || "",
-        completedAt: game.completed_at || "",
-        venue: game.venue || game.presto_data?.venue || ""
-    }));
+const validGames = (data.games || []).filter(game =>
+    game.game_id &&
+    game.scheduled_start &&
+    game.away_team_name &&
+    game.home_team_name
+);
+
+// WPBL/Presto can temporarily publish duplicate records for the same matchup
+// after a schedule-time correction. Keep one record per local schedule date +
+// teams, preferring the most recently updated / most live-looking record.
+const statusRank = status => {
+    const value = String(status || "").toLowerCase();
+    if (value.includes("progress") || value.includes("live")) return 4;
+    if (value.includes("final") || value.includes("complete")) return 3;
+    if (value.includes("postpon") || value.includes("cancel")) return 2;
+    return 1;
+};
+
+const gameFreshness = game => {
+    const stamp = game.updated_at || game.completed_at || game.scheduled_start || "";
+    const parsed = Date.parse(stamp);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const dedupedGames = [];
+validGames.forEach(game => {
+    const date = game.scheduled_start.split("T")[0];
+    const away = normalizeTeamName(game.away_team_name);
+    const home = normalizeTeamName(game.home_team_name);
+    const candidateTime = Date.parse(game.scheduled_start);
+
+    // Only collapse near-identical schedule records. Matchups separated by more
+    // than 90 minutes remain distinct so a genuine doubleheader is preserved.
+    const duplicateIndex = dedupedGames.findIndex(existing => {
+        if (existing.scheduled_start.split("T")[0] !== date) return false;
+        if (normalizeTeamName(existing.away_team_name) !== away) return false;
+        if (normalizeTeamName(existing.home_team_name) !== home) return false;
+        const existingTime = Date.parse(existing.scheduled_start);
+        if (!Number.isFinite(existingTime) || !Number.isFinite(candidateTime)) return true;
+        return Math.abs(existingTime - candidateTime) <= 90 * 60 * 1000;
+    });
+
+    if (duplicateIndex < 0) {
+        dedupedGames.push(game);
+        return;
+    }
+
+    const existing = dedupedGames[duplicateIndex];
+    const existingRank = statusRank(existing.status);
+    const candidateRank = statusRank(game.status);
+    if (candidateRank > existingRank ||
+        (candidateRank === existingRank && gameFreshness(game) >= gameFreshness(existing))) {
+        dedupedGames[duplicateIndex] = game;
+    }
+});
+
+WPBL_GAMES = dedupedGames.map(game => ({
+    date: game.scheduled_start.split("T")[0],
+    gameId: game.game_id,
+    away: game.away_team_name,
+    home: game.home_team_name,
+    time: game.scheduled_start,
+    status: game.status || "",
+    completedAt: game.completed_at || "",
+    venue: game.venue || game.presto_data?.venue || ""
+}));
 
     showGamesForDate("today");
 }
@@ -550,6 +599,66 @@ function buildGameCompleteEvent(data) {
     };
 }
 
+function formatPositionLabel(position = "") {
+    const labels = {
+        p: "pitcher", c: "catcher", "1b": "first base", "2b": "second base",
+        "3b": "third base", ss: "shortstop", lf: "left field", cf: "center field",
+        rf: "right field", dh: "designated hitter"
+    };
+    const key = String(position).toLowerCase();
+    return labels[key] || key.toUpperCase();
+}
+
+function humanizeProviderNarrative(narrative = "") {
+    const raw = String(narrative).trim();
+    if (!raw) return raw;
+
+    let match = raw.match(/^\/\s+for\s+(.+?)[.]?$/i);
+    if (match) return `${match[1].trim()} exits the game.`;
+
+    match = raw.match(/^(.+?)\s+pinch hit for\s+(.+?)[.]?$/i);
+    if (match) return `${match[1].trim()} pinch-hits for ${match[2].trim()}.`;
+
+    match = raw.match(/^(.+?)\s+pinch ran for\s+(.+?)[.]?$/i);
+    if (match) return `${match[1].trim()} pinch-runs for ${match[2].trim()}.`;
+
+    match = raw.match(/^(.+?)\s+to\s+([a-z0-9]+)\s+for\s+(.+?)[.]?$/i);
+    if (match) {
+        return `${match[1].trim()} replaces ${match[3].trim()} at ${formatPositionLabel(match[2])}.`;
+    }
+
+    match = raw.match(/^(.+?)\s+to\s+([a-z0-9]+)[.]?$/i);
+    if (match) return `${match[1].trim()} moves to ${formatPositionLabel(match[2])}.`;
+
+    return raw;
+}
+
+function parsePitcherChangeNarrative(narrative = "") {
+    const raw = String(narrative).trim();
+    let match = raw.match(/^(.+?)\s+to\s+p\s+for\s+(.+?)[.]?$/i);
+    if (match) return { incoming: match[1].trim(), outgoing: match[2].trim() };
+    match = raw.match(/^(.+?)\s+to\s+p[.]?$/i);
+    if (match) return { incoming: match[1].trim(), outgoing: "" };
+    return null;
+}
+
+function getRevealedActivePitcher(event) {
+    if (!event) return "";
+    const defensiveSide = event.battingSide === "away" ? "home" : "away";
+    const defensiveTeam = currentGameData?.teams?.find(team => team.side === defensiveSide);
+    let activePitcher = event.pitcher || "";
+
+    revealedIndexes.forEach(index => {
+        const revealed = events[index];
+        const change = parsePitcherChangeNarrative(revealed?.rawNarrative || "");
+        if (!change?.incoming) return;
+        if (defensiveTeam && !getTeamPlayer(defensiveTeam, change.incoming)) return;
+        activePitcher = change.incoming;
+    });
+
+    return activePitcher;
+}
+
 function buildEvents(data) {
     events = [];
 
@@ -619,7 +728,7 @@ function buildEvents(data) {
                 inning: `${half} ${inning}`,
                 batter: batter,
                 pitcher: pitcher,
-                text: `RESULT: ${play.narrative}`,
+                text: `RESULT: ${humanizeProviderNarrative(play.narrative)}`,
                 atBat: plateAppearanceNumber,
                 balls: play.balls,
                 strikes: play.strikes,
@@ -884,7 +993,12 @@ document.getElementById("status").innerHTML = `
     
     const balls = displayState.preview ? 0 : (event.balls ?? 0);
 const strikes = displayState.preview ? 0 : (event.strikes ?? 0);
-const outs = event.outs ?? 0;
+const revealedStateEvent = displayState.preview && displayState.previous
+    ? displayState.previous
+    : event;
+const outs = revealedStateEvent.outs ?? 0;
+const displayBases = revealedStateEvent.bases;
+const displayPitcher = getRevealedActivePitcher(event) || event.pitcher;
 
 const ballDots =
     "● ".repeat(balls) +
@@ -903,8 +1017,9 @@ document.getElementById("batterInfo").innerHTML = `
     <div class="inning-line">${event.inning}</div>
 
     <div class="matchup-line">
-        <strong>${event.pitcher}${(() => {
-            const pitchCount = getDisplayPitcherPitchCount(event.pitcher);
+        <strong>${displayPitcher}${(() => {
+            let pitchCount = getDisplayPitcherPitchCount(displayPitcher);
+            if (pitchCount === null && displayPitcher !== event.pitcher) pitchCount = 0;
             return pitchCount === null ? "" : ` · ${pitchCount} pitches`;
         })()}</strong>
         <span> vs </span>
@@ -918,14 +1033,14 @@ document.getElementById("batterInfo").innerHTML = `
     </div>
 
     <div class="between-play-info">
-        ${renderBaseDiamond(event.bases)}
+        ${renderBaseDiamond(displayBases)}
     </div>
 `;
 }
 
 function getEventIcon(event) {
     if (event.kind === "game-complete") return "✓";
-    const text = event.text.toLowerCase();
+    const text = `${event.text || ""} ${event.rawNarrative || ""}`.toLowerCase();
 
     if (event.pitchNumber) {
         const numbers = ["", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
