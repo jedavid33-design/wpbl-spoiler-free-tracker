@@ -362,26 +362,15 @@ function getRunsScored(play) {
         /homered|home run/i.test(narrative);
 
     if (isHomeRun) {
-        // Handles:
-        // "RBI"   = 1 run
-        // "2 RBI" = 2 runs
-        // "3 RBI" = 3 runs
-        // "4 RBI" = 4 runs
-        const rbiMatch =
-            narrative.match(/(?:(\d+)\s+)?RBI\b/i);
+        // Presto sometimes emits a bare singular "RBI" even when the narrative
+        // explicitly names multiple runners scoring. Never let that undercount
+        // a home run: the batter scores plus every explicitly named runner.
+        const rbiMatch = narrative.match(/(?:(\d+)\s+)?RBI\b/i);
+        const rbiRuns = rbiMatch ? (rbiMatch[1] ? Number(rbiMatch[1]) : 1) : 0;
+        const narrativeRuns = (narrative.match(/\bscored\b/gi) || []).length + 1;
+        const providerRuns = Number(play.runs_scored) || 0;
 
-        if (rbiMatch) {
-            return rbiMatch[1]
-                ? Number(rbiMatch[1])
-                : 1;
-        }
-
-        // Emergency fallback:
-        // batter scores on every home run.
-        const runnersScored =
-            (narrative.match(/\bscored\b/gi) || []).length;
-
-        return runnersScored + 1;
+        return Math.max(rbiRuns, narrativeRuns, providerRuns);
     }
 
     return Number(play.runs_scored) || 0;
@@ -613,6 +602,14 @@ function humanizeProviderNarrative(narrative = "") {
     const raw = String(narrative).trim();
     if (!raw) return raw;
 
+    // Do not reinterpret an actual play as a defensive substitution. Presto can
+    // append terse position tokens (for example "p to ss") to a play narrative;
+    // the old catch-all "... to <anything>" rule turned those into garbage such
+    // as "advanced moves to X" and "out at second p moves to shortstop".
+    if (/\b(?:walked|struck out|singled|doubled|tripled|homered|hit by pitch|reached|grounded out|flied out|lined out|popped out|fouled out|sacrifice|advanced|stole|scored|out at|picked off|caught stealing)\b/i.test(raw)) {
+        return raw.replace(/\s+(?:p|c|1b|2b|3b|ss|lf|cf|rf|dh)\s+to\s+(?:p|c|1b|2b|3b|ss|lf|cf|rf|dh)[.]?$/i, ".");
+    }
+
     let match = raw.match(/^\/\s+for\s+(.+?)[.]?$/i);
     if (match) return `${match[1].trim()} exits the game.`;
 
@@ -622,12 +619,12 @@ function humanizeProviderNarrative(narrative = "") {
     match = raw.match(/^(.+?)\s+pinch ran for\s+(.+?)[.]?$/i);
     if (match) return `${match[1].trim()} pinch-runs for ${match[2].trim()}.`;
 
-    match = raw.match(/^(.+?)\s+to\s+([a-z0-9]+)\s+for\s+(.+?)[.]?$/i);
+    match = raw.match(/^(.+?)\s+to\s+(p|c|1b|2b|3b|ss|lf|cf|rf|dh)\s+for\s+(.+?)[.]?$/i);
     if (match) {
         return `${match[1].trim()} replaces ${match[3].trim()} at ${formatPositionLabel(match[2])}.`;
     }
 
-    match = raw.match(/^(.+?)\s+to\s+([a-z0-9]+)[.]?$/i);
+    match = raw.match(/^(.+?)\s+to\s+(p|c|1b|2b|3b|ss|lf|cf|rf|dh)[.]?$/i);
     if (match) return `${match[1].trim()} moves to ${formatPositionLabel(match[2])}.`;
 
     return raw;
@@ -690,18 +687,29 @@ function buildEvents(data) {
             // WPBL currently mislabels some codes.
             // K behaves like a strike in the captured feed.
             // P appears to mean ball put in play.
-            if (code === "B") {
-                balls++;
-            } else if (code === "K") {
-                strikes++;
-                text = "Called strike";
-            } else if (code === "F") {
+            const description = String(pitch.description || "").toLowerCase();
+            const isBallInPlay =
+                (code === "P" && pitch.type === "pitchout") ||
+                /ball in play|in play/.test(description);
+            const isFoul = code === "F" || /\bfoul\b/.test(description);
+            const isStrike =
+                code === "K" || code === "S" ||
+                /called strike|swinging strike|strike swinging|struck swinging/.test(description);
+            const isBall =
+                code === "B" ||
+                (/\bball\b/.test(description) && !isBallInPlay);
+
+            if (isBallInPlay) {
+                // Presto labels some terminal ball-in-play markers as pitchout.
+                text = "Ball in play";
+            } else if (isFoul) {
                 if (strikes < 2) strikes++;
                 text = "Foul";
-            } else if (code === "P" && pitch.type === "pitchout") {
-                // Presto labels its terminal ball-in-play marker as pitchout.
-                // Keep the feed identity intact and correct only the display.
-                text = "Ball in play";
+            } else if (isStrike) {
+                strikes = Math.min(3, strikes + 1);
+                if (/called/.test(description) || code === "K") text = "Called strike";
+            } else if (isBall) {
+                balls = Math.min(4, balls + 1);
             }
 
             events.push({
@@ -1306,6 +1314,10 @@ function reconstructLineupAtRevealedPoint(team) {
         const narrative = String(events[index]?.rawNarrative || "").trim();
         if (!narrative) return;
 
+        // Gameplay narratives can end in terse provider position fragments.
+        // Never let those mutate the reconstructed lineup.
+        if (/\b(?:walked|struck out|singled|doubled|tripled|homered|hit by pitch|reached|grounded out|flied out|lined out|popped out|fouled out|sacrifice|advanced|stole|scored|out at|picked off|caught stealing)\b/i.test(narrative)) return;
+
         let match = narrative.match(/^(.+?)\s+pinch hit for\s+(.+?)[.]?$/i);
         if (match) {
             replaceInBattingSpot(match[1].trim(), match[2].trim(), "ph");
@@ -1318,13 +1330,13 @@ function reconstructLineupAtRevealedPoint(team) {
             return;
         }
 
-        match = narrative.match(/^(.+?)\s+to\s+([a-z0-9]+)\s+for\s+(.+?)[.]?$/i);
+        match = narrative.match(/^(.+?)\s+to\s+(p|c|1b|2b|3b|ss|lf|cf|rf|dh)\s+for\s+(.+?)[.]?$/i);
         if (match) {
             replaceInBattingSpot(match[1].trim(), match[3].trim(), match[2].toLowerCase());
             return;
         }
 
-        match = narrative.match(/^(.+?)\s+to\s+([a-z0-9]+)[.]?$/i);
+        match = narrative.match(/^(.+?)\s+to\s+(p|c|1b|2b|3b|ss|lf|cf|rf|dh)[.]?$/i);
         if (match) {
             changePosition(match[1].trim(), match[2].toLowerCase());
         }
