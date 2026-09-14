@@ -1,16 +1,15 @@
 const WPBL_API_BASE = "https://wpbl-api.4d8v7jw78c.workers.dev";
 
-// Two recognizable identity colors per club. One solid marker color is chosen
-// for each matchup by the same perceptual-contrast approach used by the Astros
-// tracker, then remains fixed for the entire game.
+// WPBL tracker colors are intentionally fixed per club so the same team always
+// has the same high-contrast visual identity, regardless of matchup.
 const WPBL_TEAM_COLORS = {
-    "boston hunters": { primary: "#004B3D", alternate: "#E8DDC4" },
-    "los angeles queens": { primary: "#111111", alternate: "#C99A62" },
-    "new york heights": { primary: "#08265C", alternate: "#F4F7FB" },
-    "san francisco firebells": { primary: "#4B2A70", alternate: "#F21F32" }
+    "boston hunters": "#004B3D",       // dark green
+    "los angeles queens": "#111111",  // black
+    "new york heights": "#008C95",    // teal
+    "san francisco firebells": "#4B2A70" // purple
 };
 
-const DEFAULT_TEAM_COLORS = { primary: "#64748B", alternate: "#CBD5E1" };
+const DEFAULT_TEAM_COLOR = "#64748B";
 
 let WPBL_GAMES = [];
 
@@ -107,7 +106,7 @@ function normalizeTeamName(teamName = "") {
     return teamName.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function getTeamColors(teamName) {
+function getTeamColor(teamName) {
     const normalized = normalizeTeamName(teamName);
     const exact = WPBL_TEAM_COLORS[normalized];
     if (exact) return exact;
@@ -115,88 +114,13 @@ function getTeamColors(teamName) {
     const matchingKey = Object.keys(WPBL_TEAM_COLORS).find(key =>
         normalized.includes(key) || key.includes(normalized)
     );
-    return matchingKey ? WPBL_TEAM_COLORS[matchingKey] : DEFAULT_TEAM_COLORS;
-}
-
-function hexToRgb(hexColor) {
-    const hex = hexColor.replace("#", "");
-    return {
-        red: parseInt(hex.slice(0, 2), 16) / 255,
-        green: parseInt(hex.slice(2, 4), 16) / 255,
-        blue: parseInt(hex.slice(4, 6), 16) / 255
-    };
-}
-
-function relativeLuminance(hexColor) {
-    const { red, green, blue } = hexToRgb(hexColor);
-    const linearize = channel => channel <= 0.04045
-        ? channel / 12.92
-        : ((channel + 0.055) / 1.055) ** 2.4;
-    return 0.2126 * linearize(red) + 0.7152 * linearize(green) + 0.0722 * linearize(blue);
-}
-
-function rgbToLab(hexColor) {
-    const { red, green, blue } = hexToRgb(hexColor);
-    const linearize = channel => channel <= 0.04045
-        ? channel / 12.92
-        : ((channel + 0.055) / 1.055) ** 2.4;
-    const r = linearize(red);
-    const g = linearize(green);
-    const b = linearize(blue);
-    const x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
-    const y = r * 0.2126 + g * 0.7152 + b * 0.0722;
-    const z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
-    const pivot = value => value > 0.008856 ? Math.cbrt(value) : 7.787 * value + 16 / 116;
-    return {
-        lightness: 116 * pivot(y) - 16,
-        a: 500 * (pivot(x) - pivot(y)),
-        b: 200 * (pivot(y) - pivot(z))
-    };
-}
-
-function perceptualColorDistance(firstColor, secondColor) {
-    const first = rgbToLab(firstColor);
-    const second = rgbToLab(secondColor);
-    return Math.hypot(
-        first.lightness - second.lightness,
-        first.a - second.a,
-        first.b - second.b
-    );
-}
-
-function getMatchupColorScore(firstColor, secondColor) {
-    const firstLuminance = relativeLuminance(firstColor);
-    const secondLuminance = relativeLuminance(secondColor);
-    let score = perceptualColorDistance(firstColor, secondColor) +
-        Math.abs(firstLuminance - secondLuminance) * 45;
-
-    if (firstLuminance < 0.12 && secondLuminance < 0.12) score -= 35;
-    if (firstLuminance > 0.82) score -= 28;
-    if (secondLuminance > 0.82) score -= 28;
-    return score;
+    return matchingKey ? WPBL_TEAM_COLORS[matchingKey] : DEFAULT_TEAM_COLOR;
 }
 
 function selectGameTeamColors(firstTeamName, secondTeamName) {
-    const firstIdentity = getTeamColors(firstTeamName);
-    const secondIdentity = getTeamColors(secondTeamName);
-    const firstCandidates = [firstIdentity.primary, firstIdentity.alternate];
-    const secondCandidates = [secondIdentity.primary, secondIdentity.alternate];
-    let bestPair = { first: firstCandidates[0], second: secondCandidates[0] };
-    let bestScore = -Infinity;
-
-    firstCandidates.forEach(firstColor => {
-        secondCandidates.forEach(secondColor => {
-            const score = getMatchupColorScore(firstColor, secondColor);
-            if (score > bestScore) {
-                bestScore = score;
-                bestPair = { first: firstColor, second: secondColor };
-            }
-        });
-    });
-
     return new Map([
-        ["away", bestPair.first],
-        ["home", bestPair.second]
+        ["away", getTeamColor(firstTeamName)],
+        ["home", getTeamColor(secondTeamName)]
     ]);
 }
 
@@ -362,15 +286,26 @@ function getRunsScored(play) {
         /homered|home run/i.test(narrative);
 
     if (isHomeRun) {
-        // Presto sometimes emits a bare singular "RBI" even when the narrative
-        // explicitly names multiple runners scoring. Never let that undercount
-        // a home run: the batter scores plus every explicitly named runner.
-        const rbiMatch = narrative.match(/(?:(\d+)\s+)?RBI\b/i);
-        const rbiRuns = rbiMatch ? (rbiMatch[1] ? Number(rbiMatch[1]) : 1) : 0;
-        const narrativeRuns = (narrative.match(/\bscored\b/gi) || []).length + 1;
-        const providerRuns = Number(play.runs_scored) || 0;
+        // Handles:
+        // "RBI"   = 1 run
+        // "2 RBI" = 2 runs
+        // "3 RBI" = 3 runs
+        // "4 RBI" = 4 runs
+        const rbiMatch =
+            narrative.match(/(?:(\d+)\s+)?RBI\b/i);
 
-        return Math.max(rbiRuns, narrativeRuns, providerRuns);
+        if (rbiMatch) {
+            return rbiMatch[1]
+                ? Number(rbiMatch[1])
+                : 1;
+        }
+
+        // Emergency fallback:
+        // batter scores on every home run.
+        const runnersScored =
+            (narrative.match(/\bscored\b/gi) || []).length;
+
+        return runnersScored + 1;
     }
 
     return Number(play.runs_scored) || 0;
@@ -602,14 +537,6 @@ function humanizeProviderNarrative(narrative = "") {
     const raw = String(narrative).trim();
     if (!raw) return raw;
 
-    // Do not reinterpret an actual play as a defensive substitution. Presto can
-    // append terse position tokens (for example "p to ss") to a play narrative;
-    // the old catch-all "... to <anything>" rule turned those into garbage such
-    // as "advanced moves to X" and "out at second p moves to shortstop".
-    if (/\b(?:walked|struck out|singled|doubled|tripled|homered|hit by pitch|reached|grounded out|flied out|lined out|popped out|fouled out|sacrifice|advanced|stole|scored|out at|picked off|caught stealing)\b/i.test(raw)) {
-        return raw.replace(/\s+(?:p|c|1b|2b|3b|ss|lf|cf|rf|dh)\s+to\s+(?:p|c|1b|2b|3b|ss|lf|cf|rf|dh)[.]?$/i, ".");
-    }
-
     let match = raw.match(/^\/\s+for\s+(.+?)[.]?$/i);
     if (match) return `${match[1].trim()} exits the game.`;
 
@@ -619,12 +546,12 @@ function humanizeProviderNarrative(narrative = "") {
     match = raw.match(/^(.+?)\s+pinch ran for\s+(.+?)[.]?$/i);
     if (match) return `${match[1].trim()} pinch-runs for ${match[2].trim()}.`;
 
-    match = raw.match(/^(.+?)\s+to\s+(p|c|1b|2b|3b|ss|lf|cf|rf|dh)\s+for\s+(.+?)[.]?$/i);
+    match = raw.match(/^(.+?)\s+to\s+([a-z0-9]+)\s+for\s+(.+?)[.]?$/i);
     if (match) {
         return `${match[1].trim()} replaces ${match[3].trim()} at ${formatPositionLabel(match[2])}.`;
     }
 
-    match = raw.match(/^(.+?)\s+to\s+(p|c|1b|2b|3b|ss|lf|cf|rf|dh)[.]?$/i);
+    match = raw.match(/^(.+?)\s+to\s+([a-z0-9]+)[.]?$/i);
     if (match) return `${match[1].trim()} moves to ${formatPositionLabel(match[2])}.`;
 
     return raw;
@@ -687,29 +614,18 @@ function buildEvents(data) {
             // WPBL currently mislabels some codes.
             // K behaves like a strike in the captured feed.
             // P appears to mean ball put in play.
-            const description = String(pitch.description || "").toLowerCase();
-            const isBallInPlay =
-                (code === "P" && pitch.type === "pitchout") ||
-                /ball in play|in play/.test(description);
-            const isFoul = code === "F" || /\bfoul\b/.test(description);
-            const isStrike =
-                code === "K" || code === "S" ||
-                /called strike|swinging strike|strike swinging|struck swinging/.test(description);
-            const isBall =
-                code === "B" ||
-                (/\bball\b/.test(description) && !isBallInPlay);
-
-            if (isBallInPlay) {
-                // Presto labels some terminal ball-in-play markers as pitchout.
-                text = "Ball in play";
-            } else if (isFoul) {
+            if (code === "B") {
+                balls++;
+            } else if (code === "K") {
+                strikes++;
+                text = "Called strike";
+            } else if (code === "F") {
                 if (strikes < 2) strikes++;
                 text = "Foul";
-            } else if (isStrike) {
-                strikes = Math.min(3, strikes + 1);
-                if (/called/.test(description) || code === "K") text = "Called strike";
-            } else if (isBall) {
-                balls = Math.min(4, balls + 1);
+            } else if (code === "P" && pitch.type === "pitchout") {
+                // Presto labels its terminal ball-in-play marker as pitchout.
+                // Keep the feed identity intact and correct only the display.
+                text = "Ball in play";
             }
 
             events.push({
@@ -1314,10 +1230,6 @@ function reconstructLineupAtRevealedPoint(team) {
         const narrative = String(events[index]?.rawNarrative || "").trim();
         if (!narrative) return;
 
-        // Gameplay narratives can end in terse provider position fragments.
-        // Never let those mutate the reconstructed lineup.
-        if (/\b(?:walked|struck out|singled|doubled|tripled|homered|hit by pitch|reached|grounded out|flied out|lined out|popped out|fouled out|sacrifice|advanced|stole|scored|out at|picked off|caught stealing)\b/i.test(narrative)) return;
-
         let match = narrative.match(/^(.+?)\s+pinch hit for\s+(.+?)[.]?$/i);
         if (match) {
             replaceInBattingSpot(match[1].trim(), match[2].trim(), "ph");
@@ -1330,13 +1242,13 @@ function reconstructLineupAtRevealedPoint(team) {
             return;
         }
 
-        match = narrative.match(/^(.+?)\s+to\s+(p|c|1b|2b|3b|ss|lf|cf|rf|dh)\s+for\s+(.+?)[.]?$/i);
+        match = narrative.match(/^(.+?)\s+to\s+([a-z0-9]+)\s+for\s+(.+?)[.]?$/i);
         if (match) {
             replaceInBattingSpot(match[1].trim(), match[3].trim(), match[2].toLowerCase());
             return;
         }
 
-        match = narrative.match(/^(.+?)\s+to\s+(p|c|1b|2b|3b|ss|lf|cf|rf|dh)[.]?$/i);
+        match = narrative.match(/^(.+?)\s+to\s+([a-z0-9]+)[.]?$/i);
         if (match) {
             changePosition(match[1].trim(), match[2].toLowerCase());
         }
