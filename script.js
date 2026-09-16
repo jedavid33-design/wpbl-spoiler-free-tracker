@@ -546,15 +546,20 @@ function humanizeProviderNarrative(narrative = "") {
     match = raw.match(/^(.+?)\s+pinch ran for\s+(.+?)[.]?$/i);
     if (match) return `${match[1].trim()} pinch-runs for ${match[2].trim()}.`;
 
-    match = raw.match(/^(.+?)\s+to\s+([a-z0-9]+)\s+for\s+(.+?)[.]?$/i);
+    // Only humanize genuine defensive position-change records.  The previous
+    // catch-all `... to <word>` pattern also matched baserunner narratives such
+    // as "Jamie Mackay advanced to SECOND", producing "advanced moves to".
+    const positionCode = "(p|c|1b|2b|3b|ss|lf|cf|rf|dh)";
+    match = raw.match(new RegExp(`^(.+?)\\s+to\\s+${positionCode}\\s+for\\s+(.+?)[.]?$`, "i"));
     if (match) {
         return `${match[1].trim()} replaces ${match[3].trim()} at ${formatPositionLabel(match[2])}.`;
     }
 
-    match = raw.match(/^(.+?)\s+to\s+([a-z0-9]+)[.]?$/i);
+    match = raw.match(new RegExp(`^(.+?)\\s+to\\s+${positionCode}[.]?$`, "i"));
     if (match) return `${match[1].trim()} moves to ${formatPositionLabel(match[2])}.`;
 
-    return raw;
+    // Defensive cleanup for any already-combined provider wording.
+    return raw.replace(/\badvanced\s+moves\s+to\b/gi, "advanced to");
 }
 
 function parsePitcherChangeNarrative(narrative = "") {
