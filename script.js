@@ -4,7 +4,7 @@ const WPBL_API_BASE = "https://wpbl-api.4d8v7jw78c.workers.dev";
 // has the same high-contrast visual identity, regardless of matchup.
 const WPBL_TEAM_COLORS = {
     "boston hunters": "#004B3D",       // dark green
-    "los angeles queens": "#111111",  // black
+    "los angeles queens": "#D4AF37",  // gold
     "new york heights": "#008C95",    // teal
     "san francisco firebells": "#4B2A70" // purple
 };
