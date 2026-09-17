@@ -170,7 +170,7 @@ button:hover { opacity: 0.9; }
     pointer-events: none;
     position: absolute;
     top: 0;
-    width: 5px;
+    width: 8px;
 }
 
 .event-icon {
