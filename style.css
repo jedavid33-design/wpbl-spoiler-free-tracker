@@ -157,12 +157,12 @@ button:hover { opacity: 0.9; }
 
 .team-event::before {
     background: linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--event-team-color, #64748B) 72%, #000) 0%,
-        var(--event-team-color, #64748B) 34%,
-        color-mix(in srgb, var(--event-team-color, #64748B) 52%, #fff) 50%,
-        var(--event-team-color, #64748B) 66%,
-        color-mix(in srgb, var(--event-team-color, #64748B) 82%, #000) 100%
+        90deg,
+        color-mix(in srgb, var(--event-team-color, #64748B) 58%, #000) 0%,
+        var(--event-team-color, #64748B) 28%,
+        color-mix(in srgb, var(--event-team-color, #64748B) 32%, #fff) 52%,
+        var(--event-team-color, #64748B) 72%,
+        color-mix(in srgb, var(--event-team-color, #64748B) 68%, #000) 100%
     );
     bottom: 0;
     content: "";
