@@ -557,12 +557,26 @@ button:focus-visible,
 }
 
 .base.occupied {
-    background: var(--active-team-fill, var(--active-team-color, #64748B));
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--active-team-color, #64748B) 72%, #000) 0%,
+        var(--active-team-color, #64748B) 34%,
+        color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 50%,
+        var(--active-team-color, #64748B) 66%,
+        color-mix(in srgb, var(--active-team-color, #64748B) 82%, #000) 100%
+    );
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-team-color, #64748B) 18%, transparent);
 }
 
 .home-plate {
-    background: var(--active-team-fill, var(--active-team-color, #64748B));
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--active-team-color, #64748B) 72%, #000) 0%,
+        var(--active-team-color, #64748B) 34%,
+        color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 50%,
+        var(--active-team-color, #64748B) 66%,
+        color-mix(in srgb, var(--active-team-color, #64748B) 82%, #000) 100%
+    );
 }
 
 /* Event-feed parity */
