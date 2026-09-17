@@ -6,7 +6,7 @@ const WPBL_TEAM_COLORS = {
     "boston hunters": "#004B3D",       // dark green
     "los angeles queens": "#D4AF37",  // gold
     "new york heights": "#008C95",    // teal
-    "san francisco firebells": "#4B2A70" // purple
+    "san francisco firebells": "#7B2CBF" // brighter purple for stronger separation from Hunters green
 };
 
 const DEFAULT_TEAM_COLOR = "#64748B";
