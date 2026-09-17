@@ -557,12 +557,12 @@ button:focus-visible,
 }
 
 .base.occupied {
-    background: var(--active-team-color, #64748B);
+    background: var(--active-team-fill, var(--active-team-color, #64748B));
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-team-color, #64748B) 18%, transparent);
 }
 
 .home-plate {
-    background: var(--active-team-color, #64748B);
+    background: var(--active-team-fill, var(--active-team-color, #64748B));
 }
 
 /* Event-feed parity */

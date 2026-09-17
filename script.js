@@ -871,9 +871,15 @@ const totals = getSpoilerFreeHitsErrors();
     const displayState = getDisplayState();
     const activeEvent = displayState?.event;
     const trackerScreen = document.getElementById("trackerScreen");
+    const activeTeamColor = activeEvent?.teamColor || "#64748B";
+    trackerScreen.style.setProperty("--active-team-color", activeTeamColor);
+    // Give the Queens' gold fills a restrained metallic glint while keeping
+    // outlines and borders solid for crisp contrast and visual parity.
     trackerScreen.style.setProperty(
-        "--active-team-color",
-        activeEvent?.teamColor || "#64748B"
+        "--active-team-fill",
+        activeTeamColor.toUpperCase() === "#D4AF37"
+            ? "linear-gradient(135deg, #8F6B00 0%, #D4AF37 28%, #FFF0A6 48%, #C99700 66%, #F0D46A 82%, #A87900 100%)"
+            : activeTeamColor
     );
     
 
