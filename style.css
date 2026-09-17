@@ -149,17 +149,28 @@ button:hover { opacity: 0.9; }
 }
 
 .team-event {
-    background:
-        linear-gradient(#fff, #fff) padding-box,
-        linear-gradient(
-            180deg,
-            color-mix(in srgb, var(--event-team-color, #64748B) 72%, #000) 0%,
-            var(--event-team-color, #64748B) 34%,
-            color-mix(in srgb, var(--event-team-color, #64748B) 52%, #fff) 50%,
-            var(--event-team-color, #64748B) 66%,
-            color-mix(in srgb, var(--event-team-color, #64748B) 82%, #000) 100%
-        ) border-box;
-    border-left: 5px solid transparent;
+    background: #fff;
+    border-left: 5px solid var(--event-team-color, #64748B);
+    overflow: hidden;
+    position: relative;
+}
+
+.team-event::before {
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--event-team-color, #64748B) 72%, #000) 0%,
+        var(--event-team-color, #64748B) 34%,
+        color-mix(in srgb, var(--event-team-color, #64748B) 52%, #fff) 50%,
+        var(--event-team-color, #64748B) 66%,
+        color-mix(in srgb, var(--event-team-color, #64748B) 82%, #000) 100%
+    );
+    bottom: 0;
+    content: "";
+    left: -5px;
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    width: 5px;
 }
 
 .event-icon {
