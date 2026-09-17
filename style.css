@@ -157,7 +157,7 @@ button:hover { opacity: 0.9; }
 
 .team-event::before {
     background: linear-gradient(
-        90deg,
+        78deg,
         color-mix(in srgb, var(--event-team-color, #64748B) 58%, #000) 0%,
         var(--event-team-color, #64748B) 28%,
         color-mix(in srgb, var(--event-team-color, #64748B) 32%, #fff) 52%,
