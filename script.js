@@ -750,7 +750,7 @@ function getSpoilerFreeHitsErrors() {
 
         if (
             event.eventType === "field_error" ||
-            event.text.toLowerCase().includes("error")
+            /\b(fielding|throwing) error\b/i.test(event.text)
         ) {
             if (event.battingSide === "away") {
                 homeErrors++;
@@ -759,6 +759,18 @@ function getSpoilerFreeHitsErrors() {
             }
         }
     });
+
+    const gameCompleteRevealed = revealedIndexes.some(index => events[index]?.kind === "game-complete");
+    if (gameCompleteRevealed && currentGameData) {
+        const awayTeam = (currentGameData.teams || []).find(team => team.side === "away");
+        const homeTeam = (currentGameData.teams || []).find(team => team.side === "home");
+        return {
+            awayHits: awayTeam?.totals?.hits ?? awayHits,
+            homeHits: homeTeam?.totals?.hits ?? homeHits,
+            awayErrors: awayTeam?.totals?.errors ?? awayErrors,
+            homeErrors: homeTeam?.totals?.errors ?? homeErrors
+        };
+    }
 
     return {
         awayHits,
@@ -1000,6 +1012,17 @@ function addEventCard(index) {
     if (event.kind === "game-complete") {
         row.className = "event-row game-complete-card";
         const details = event.details;
+        const awayTeam = currentGameData?.teams?.find(team => team.side === "away");
+        const homeTeam = currentGameData?.teams?.find(team => team.side === "home");
+        const awayRuns = Number(awayTeam?.totals?.runs);
+        const homeRuns = Number(homeTeam?.totals?.runs);
+        const winnerSide = Number.isFinite(awayRuns) && Number.isFinite(homeRuns) && awayRuns !== homeRuns
+            ? (awayRuns > homeRuns ? "away" : "home")
+            : "";
+        const winnerColor = winnerSide
+            ? (selectedGameTeamColors.get(winnerSide) || "#64748B")
+            : "#64748B";
+        row.style.setProperty("--winner-color", winnerColor);
         const optionalDetail = (label, value) => value
             ? `<div><dt>${label}</dt><dd>${value}</dd></div>`
             : "";
