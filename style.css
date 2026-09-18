@@ -371,7 +371,7 @@ button:hover { opacity: 0.9; }
 }
 
 .game-complete-details dd {
-    color: var(--winner-color, #64748B);
+    color: #000;
     margin: 0;
 }
 
