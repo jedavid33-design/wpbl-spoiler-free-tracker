@@ -577,16 +577,27 @@ button:focus-visible,
 }
 
 .base.occupied {
-    background: linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--active-team-color, #64748B) 72%, #000) 0%,
-        var(--active-team-color, #64748B) 24%,
-        color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 42%,
-        color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 58%,
-        var(--active-team-color, #64748B) 76%,
-        color-mix(in srgb, var(--active-team-color, #64748B) 82%, #000) 100%
-    );
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--active-team-color, #64748B) 18%, transparent);
+    background:
+        radial-gradient(
+            circle at 24% 76%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 28%, #fff) 0%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 48%, #fff) 20%,
+            transparent 48%
+        ),
+        linear-gradient(
+            90deg,
+            color-mix(in srgb, var(--active-team-color, #64748B) 62%, #000) 0%,
+            var(--active-team-color, #64748B) 24%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 42%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 58%,
+            var(--active-team-color, #64748B) 76%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 76%, #000) 100%
+        );
+    border-radius: 3px;
+    box-shadow:
+        inset 1px 1px 1px color-mix(in srgb, var(--active-team-color, #64748B) 25%, #fff),
+        inset -1px -1px 1px color-mix(in srgb, var(--active-team-color, #64748B) 58%, #000),
+        0 1px 2px color-mix(in srgb, var(--active-team-color, #64748B) 25%, transparent);
 }
 
 .home-plate {
