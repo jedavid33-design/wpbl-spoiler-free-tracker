@@ -612,14 +612,26 @@ button:focus-visible,
 }
 
 .home-plate {
-    background: linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--active-team-color, #64748B) 72%, #000) 0%,
-        var(--active-team-color, #64748B) 34%,
-        color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 50%,
-        var(--active-team-color, #64748B) 66%,
-        color-mix(in srgb, var(--active-team-color, #64748B) 82%, #000) 100%
-    );
+    background:
+        radial-gradient(
+            circle at 24% 76%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 28%, #fff) 0%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 48%, #fff) 20%,
+            transparent 48%
+        ),
+        linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--active-team-color, #64748B) 62%, #000) 0%,
+            var(--active-team-color, #64748B) 24%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 42%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 52%, #fff) 58%,
+            var(--active-team-color, #64748B) 76%,
+            color-mix(in srgb, var(--active-team-color, #64748B) 76%, #000) 100%
+        );
+    box-shadow:
+        inset 1px 1px 1px color-mix(in srgb, var(--active-team-color, #64748B) 25%, #fff),
+        inset -1px -1px 1px color-mix(in srgb, var(--active-team-color, #64748B) 58%, #000),
+        0 1px 2px color-mix(in srgb, var(--active-team-color, #64748B) 25%, transparent);
 }
 
 /* Event-feed parity */
