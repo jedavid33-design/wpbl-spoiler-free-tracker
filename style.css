@@ -272,13 +272,44 @@ button:hover { opacity: 0.9; }
 }
 
 .game-complete-card {
-    border-top: 6px solid #EB6E1F;
-    padding: 18px;
+    border-top: 0;
+    padding: 24px 18px 18px;
+    position: relative;
+}
+
+.game-complete-card::before {
+    background:
+        radial-gradient(
+            circle at 24% 76%,
+            color-mix(in srgb, var(--winner-color, #64748B) 28%, #fff) 0%,
+            color-mix(in srgb, var(--winner-color, #64748B) 48%, #fff) 20%,
+            transparent 48%
+        ),
+        linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--winner-color, #64748B) 62%, #000) 0%,
+            var(--winner-color, #64748B) 24%,
+            color-mix(in srgb, var(--winner-color, #64748B) 52%, #fff) 42%,
+            color-mix(in srgb, var(--winner-color, #64748B) 52%, #fff) 58%,
+            var(--winner-color, #64748B) 76%,
+            color-mix(in srgb, var(--winner-color, #64748B) 76%, #000) 100%
+        );
+    border-radius: 14px 14px 0 0;
+    box-shadow:
+        inset 0 1px 1px color-mix(in srgb, var(--winner-color, #64748B) 25%, #fff),
+        inset 0 -1px 1px color-mix(in srgb, var(--winner-color, #64748B) 58%, #000),
+        0 1px 2px color-mix(in srgb, var(--winner-color, #64748B) 25%, transparent);
+    content: "";
+    height: 6px;
+    left: 0;
+    position: absolute;
+    right: 0;
+    top: 0;
 }
 
 .game-complete-title {
     align-items: center;
-    color: #002D62;
+    color: var(--winner-color, #64748B);
     display: flex;
     font-size: 20px;
     font-weight: bold;
@@ -288,7 +319,7 @@ button:hover { opacity: 0.9; }
 
 .game-complete-title .event-icon {
     align-items: center;
-    background: #002D62;
+    background: var(--winner-color, #64748B);
     border-radius: 50%;
     color: white;
     display: inline-flex;
@@ -331,7 +362,7 @@ button:hover { opacity: 0.9; }
 .game-complete-details .wide { grid-column: 1 / -1; }
 
 .game-complete-details dt {
-    color: #EB6E1F;
+    color: var(--winner-color, #64748B);
     font-size: 12px;
     font-weight: bold;
     letter-spacing: 0.04em;
@@ -340,7 +371,7 @@ button:hover { opacity: 0.9; }
 }
 
 .game-complete-details dd {
-    color: #002D62;
+    color: var(--winner-color, #64748B);
     margin: 0;
 }
 
