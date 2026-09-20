@@ -294,18 +294,22 @@ function getRunsScored(play) {
         const rbiMatch =
             narrative.match(/(?:(\d+)\s+)?RBI\b/i);
 
-        if (rbiMatch) {
-            return rbiMatch[1]
-                ? Number(rbiMatch[1])
-                : 1;
-        }
-
-        // Emergency fallback:
-        // batter scores on every home run.
         const runnersScored =
             (narrative.match(/\bscored\b/gi) || []).length;
+        const narrativeRunCount = runnersScored + 1;
 
-        return runnersScored + 1;
+        if (rbiMatch) {
+            const rbiRunCount = rbiMatch[1]
+                ? Number(rbiMatch[1])
+                : 1;
+            // Some WPBL homer narratives use bare "RBI" even when a named
+            // runner also scored. Never let that shorthand undercount the
+            // batter plus explicitly named scoring runners.
+            return Math.max(rbiRunCount, narrativeRunCount);
+        }
+
+        // Emergency fallback: batter scores on every home run.
+        return narrativeRunCount;
     }
 
     return Number(play.runs_scored) || 0;
@@ -534,32 +538,7 @@ function formatPositionLabel(position = "") {
 }
 
 function humanizeProviderNarrative(narrative = "") {
-    const raw = String(narrative).trim();
-    if (!raw) return raw;
-
-    let match = raw.match(/^\/\s+for\s+(.+?)[.]?$/i);
-    if (match) return `${match[1].trim()} exits the game.`;
-
-    match = raw.match(/^(.+?)\s+pinch hit for\s+(.+?)[.]?$/i);
-    if (match) return `${match[1].trim()} pinch-hits for ${match[2].trim()}.`;
-
-    match = raw.match(/^(.+?)\s+pinch ran for\s+(.+?)[.]?$/i);
-    if (match) return `${match[1].trim()} pinch-runs for ${match[2].trim()}.`;
-
-    // Only humanize genuine defensive position-change records.  The previous
-    // catch-all `... to <word>` pattern also matched baserunner narratives such
-    // as "Jamie Mackay advanced to SECOND", producing "advanced moves to".
-    const positionCode = "(p|c|1b|2b|3b|ss|lf|cf|rf|dh)";
-    match = raw.match(new RegExp(`^(.+?)\\s+to\\s+${positionCode}\\s+for\\s+(.+?)[.]?$`, "i"));
-    if (match) {
-        return `${match[1].trim()} replaces ${match[3].trim()} at ${formatPositionLabel(match[2])}.`;
-    }
-
-    match = raw.match(new RegExp(`^(.+?)\\s+to\\s+${positionCode}[.]?$`, "i"));
-    if (match) return `${match[1].trim()} moves to ${formatPositionLabel(match[2])}.`;
-
-    // Defensive cleanup for any already-combined provider wording.
-    return raw.replace(/\badvanced\s+moves\s+to\b/gi, "advanced to");
+    return String(narrative).trim();
 }
 
 function parsePitcherChangeNarrative(narrative = "") {
