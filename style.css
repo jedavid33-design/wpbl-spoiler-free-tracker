@@ -107,6 +107,27 @@ button:hover { opacity: 0.9; }
 
 .no-games { color: #475569; }
 
+.game-status {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.retry-button {
+    cursor: pointer;
+}
+
+.refresh-notice {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-radius: 10px;
+    color: #92400e;
+    font-size: 14px;
+    line-height: 1.4;
+    margin-top: 12px;
+    padding: 10px 12px;
+}
+
 #status {
     background: white;
     border-radius: 10px;

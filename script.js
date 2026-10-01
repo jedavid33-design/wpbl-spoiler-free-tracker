@@ -14,77 +14,102 @@ const DEFAULT_TEAM_COLOR = "#64748B";
 let WPBL_GAMES = [];
 
 async function loadWPBLGames() {
-    const response = await fetch(`${WPBL_API_BASE}/games`);
-    const data = await response.json();
+    const container = document.getElementById("gameChoices");
 
-const validGames = (data.games || []).filter(game =>
-    game.game_id &&
-    game.scheduled_start &&
-    game.away_team_name &&
-    game.home_team_name
-);
+    try {
+        const response = await fetch(`${WPBL_API_BASE}/games`);
+        if (!response.ok) {
+            throw new Error(`Schedule request failed (HTTP ${response.status})`);
+        }
+        const data = await response.json();
+        if (!Array.isArray(data.games)) {
+            throw new Error("Schedule response was not in the expected shape");
+        }
 
-// WPBL/Presto can temporarily publish duplicate records for the same matchup
-// after a schedule-time correction. Keep one record per local schedule date +
-// teams, preferring the most recently updated / most live-looking record.
-const statusRank = status => {
-    const value = String(status || "").toLowerCase();
-    if (value.includes("progress") || value.includes("live")) return 4;
-    if (value.includes("final") || value.includes("complete")) return 3;
-    if (value.includes("postpon") || value.includes("cancel")) return 2;
-    return 1;
-};
+        const validGames = data.games.filter(game =>
+            game.game_id &&
+            game.scheduled_start &&
+            game.away_team_name &&
+            game.home_team_name
+        );
 
-const gameFreshness = game => {
-    const stamp = game.updated_at || game.completed_at || game.scheduled_start || "";
-    const parsed = Date.parse(stamp);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
+        // WPBL/Presto can temporarily publish duplicate records for the same matchup
+        // after a schedule-time correction. Keep one record per local schedule date +
+        // teams, preferring the most recently updated / most live-looking record.
+        const statusRank = status => {
+            const value = String(status || "").toLowerCase();
+            if (value.includes("progress") || value.includes("live")) return 4;
+            if (value.includes("final") || value.includes("complete")) return 3;
+            if (value.includes("postpon") || value.includes("cancel")) return 2;
+            return 1;
+        };
 
-const dedupedGames = [];
-validGames.forEach(game => {
-    const date = game.scheduled_start.split("T")[0];
-    const away = normalizeTeamName(game.away_team_name);
-    const home = normalizeTeamName(game.home_team_name);
-    const candidateTime = Date.parse(game.scheduled_start);
+        const gameFreshness = game => {
+            const stamp = game.updated_at || game.completed_at || game.scheduled_start || "";
+            const parsed = Date.parse(stamp);
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
 
-    // Only collapse near-identical schedule records. Matchups separated by more
-    // than 90 minutes remain distinct so a genuine doubleheader is preserved.
-    const duplicateIndex = dedupedGames.findIndex(existing => {
-        if (existing.scheduled_start.split("T")[0] !== date) return false;
-        if (normalizeTeamName(existing.away_team_name) !== away) return false;
-        if (normalizeTeamName(existing.home_team_name) !== home) return false;
-        const existingTime = Date.parse(existing.scheduled_start);
-        if (!Number.isFinite(existingTime) || !Number.isFinite(candidateTime)) return true;
-        return Math.abs(existingTime - candidateTime) <= 90 * 60 * 1000;
-    });
+        const dedupedGames = [];
+        validGames.forEach(game => {
+            // Bucket by the device-local calendar date so the bucket always
+            // agrees with the local start time shown on the game button.
+            const date = getLocalDateString(new Date(game.scheduled_start));
+            const away = normalizeTeamName(game.away_team_name);
+            const home = normalizeTeamName(game.home_team_name);
+            const candidateTime = Date.parse(game.scheduled_start);
 
-    if (duplicateIndex < 0) {
-        dedupedGames.push(game);
-        return;
+            // Only collapse near-identical schedule records. Matchups separated by more
+            // than 90 minutes remain distinct so a genuine doubleheader is preserved.
+            const duplicateIndex = dedupedGames.findIndex(existing => {
+                if (getLocalDateString(new Date(existing.scheduled_start)) !== date) return false;
+                if (normalizeTeamName(existing.away_team_name) !== away) return false;
+                if (normalizeTeamName(existing.home_team_name) !== home) return false;
+                const existingTime = Date.parse(existing.scheduled_start);
+                if (!Number.isFinite(existingTime) || !Number.isFinite(candidateTime)) return true;
+                return Math.abs(existingTime - candidateTime) <= 90 * 60 * 1000;
+            });
+
+            if (duplicateIndex < 0) {
+                dedupedGames.push(game);
+                return;
+            }
+
+            const existing = dedupedGames[duplicateIndex];
+            const existingRank = statusRank(existing.status);
+            const candidateRank = statusRank(game.status);
+            if (candidateRank > existingRank ||
+                (candidateRank === existingRank && gameFreshness(game) >= gameFreshness(existing))) {
+                dedupedGames[duplicateIndex] = game;
+            }
+        });
+
+        WPBL_GAMES = dedupedGames.map(game => ({
+            date: getLocalDateString(new Date(game.scheduled_start)),
+            gameId: game.game_id,
+            away: game.away_team_name,
+            home: game.home_team_name,
+            time: game.scheduled_start,
+            status: game.status || "",
+            completedAt: game.completed_at || "",
+            venue: game.venue || game.presto_data?.venue || ""
+        }));
+
+        showGamesForDate("today");
+    } catch (error) {
+        // An outage must never present as an empty schedule: show an honest
+        // error with a one-tap retry instead of the "No WPBL games found"
+        // message, which is reserved for genuinely empty dates.
+        container.innerHTML = `
+            <p class="no-games">
+                Couldn't reach the WPBL schedule. Check your connection, then try again.
+            </p>
+            <button class="game-choice retry-button" id="retryScheduleButton">
+                <strong>Try Again</strong>
+            </button>
+        `;
+        document.getElementById("retryScheduleButton").addEventListener("click", loadWPBLGames);
     }
-
-    const existing = dedupedGames[duplicateIndex];
-    const existingRank = statusRank(existing.status);
-    const candidateRank = statusRank(game.status);
-    if (candidateRank > existingRank ||
-        (candidateRank === existingRank && gameFreshness(game) >= gameFreshness(existing))) {
-        dedupedGames[duplicateIndex] = game;
-    }
-});
-
-WPBL_GAMES = dedupedGames.map(game => ({
-    date: game.scheduled_start.split("T")[0],
-    gameId: game.game_id,
-    away: game.away_team_name,
-    home: game.home_team_name,
-    time: game.scheduled_start,
-    status: game.status || "",
-    completedAt: game.completed_at || "",
-    venue: game.venue || game.presto_data?.venue || ""
-}));
-
-    showGamesForDate("today");
 }
 
 let selectedGameId = null;
@@ -104,6 +129,18 @@ let selectedGameTeamColors = new Map();
 
 function normalizeTeamName(teamName = "") {
     return teamName.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// API values are interpolated into innerHTML in several places. Escape them
+// so a quote or angle bracket in a future API value can never break a button
+// or inject markup.
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 function getTeamColor(teamName) {
@@ -181,17 +218,27 @@ function renderGameChoices(date) {
         return;
     }
 
+    // The status text (Scheduled / Final / Postponed ...) is shown on the
+    // button, but never any score, inning, or other result detail.
     container.innerHTML = games.map(game => `
         <button
             class="game-choice"
-            onclick="selectGame('${game.gameId}', '${game.date}')"
+            data-game-id="${escapeHtml(game.gameId)}"
+            data-game-date="${escapeHtml(game.date)}"
         >
-            <strong>${game.away}</strong>
+            <strong>${escapeHtml(game.away)}</strong>
             <span> at </span>
-            <strong>${game.home}</strong>
+            <strong>${escapeHtml(game.home)}</strong>
             <small>${formatGameTime(game.time)}</small>
+            <small class="game-status">${escapeHtml(game.status || "Scheduled")}</small>
         </button>
     `).join("");
+
+    container.querySelectorAll(".game-choice[data-game-id]").forEach(button => {
+        button.addEventListener("click", () => {
+            selectGame(button.dataset.gameId, button.dataset.gameDate);
+        });
+    });
 }
 
 function selectGame(gameId, gameDate) {
@@ -208,6 +255,7 @@ function selectGame(gameId, gameDate) {
     document.getElementById("gamePicker").classList.add("hidden");
     document.getElementById("trackerScreen").classList.remove("hidden");
 
+    startRefetchTimer();
     loadGame();
 }
 
@@ -217,65 +265,217 @@ function returnToGamePicker() {
     currentGamePk = null;
     currentGameSchedule = null;
 
+    stopRefetchTimer();
+
     document.getElementById("trackerScreen").classList.add("hidden");
     document.getElementById("gamePicker").classList.remove("hidden");
 }
 
     
-async function loadGame(askResume = true) {
-    if (askResume) {
-    document.getElementById("status").innerHTML = "Loading WPBL game...";
-    document.getElementById("batterInfo").innerHTML = "";
-    document.getElementById("eventList").innerHTML = "";
+// Refetch guard state: the 15s interval never overlaps fetches, every fetch
+// has a timeout, and finished games stop refetching entirely.
+let refetchInFlight = false;
+let refetchTimer = null;
+const REFETCH_INTERVAL_MS = 15000;
+const FETCH_TIMEOUT_MS = 20000;
+
+function startRefetchTimer() {
+    stopRefetchTimer();
+    refetchTimer = setInterval(() => {
+        if (selectedGameId) {
+            loadGame(false);
+        }
+    }, REFETCH_INTERVAL_MS);
 }
 
-    if (!selectedGameId) {
-    return;
+function stopRefetchTimer() {
+    if (refetchTimer) {
+        clearInterval(refetchTimer);
+        refetchTimer = null;
+    }
 }
 
-const gameId = selectedGameId;
+function showRefreshNotice(message) {
+    const notice = document.getElementById("refreshNotice");
+    if (!notice) return;
+    notice.textContent = message;
+    notice.classList.remove("hidden");
+}
 
-const feedUrl =
-    `${WPBL_API_BASE}/games/${gameId}/boxscore`;
+function clearRefreshNotice() {
+    const notice = document.getElementById("refreshNotice");
+    if (!notice) return;
+    notice.textContent = "";
+    notice.classList.add("hidden");
+}
 
-const feedResponse = await fetch(feedUrl);
-const responseData = await feedResponse.json();
+// Stable identity for one built event, so revealed positions survive feed
+// corrections that add or remove events (which would shift raw indexes).
+function eventIdentityKey(event) {
+    if (!event) return "";
+    if (event.kind === "game-complete") return "game-complete";
+    return [
+        event.atBat ?? "",
+        event.inning ?? "",
+        event.pitchNumber === null || event.pitchNumber === undefined
+            ? "result"
+            : `pitch-${event.pitchNumber}`,
+        event.batter ?? "",
+        event.text ?? ""
+    ].join("│");
+}
 
-const feedData = responseData.boxscore;
+// Remap old revealed indexes onto a rebuilt events array by matching stable
+// identities in order. Events corrected out of the feed are dropped; the
+// rest keep their true position even when earlier events shift the array.
+function remapRevealedIndexes(oldIndexes, previousEvents) {
+    if (!Array.isArray(oldIndexes) || oldIndexes.length === 0) return [];
+    if (previousEvents === events) return oldIndexes.slice();
 
-currentGameData = feedData;
-currentGamePk = gameId;
+    const oldKeys = previousEvents.map(eventIdentityKey);
+    const usedNewIndexes = new Set();
+    const remapped = [];
+    let searchFrom = 0;
 
-const awayTeam = feedData.teams.find(team => team.side === "away");
-const homeTeam = feedData.teams.find(team => team.side === "home");
+    oldIndexes.forEach(oldIndex => {
+        if (!Number.isInteger(oldIndex) || oldIndex < 0 || oldIndex >= oldKeys.length) return;
+        const key = oldKeys[oldIndex];
 
-awayTeamName = awayTeam?.name || "Away";
-homeTeamName = homeTeam?.name || "Home";
-selectedGameTeamColors = selectGameTeamColors(awayTeamName, homeTeamName);
-
-buildEvents(feedData)
-
-    const saved = localStorage.getItem(SAVE_KEY);
-
-if (askResume && saved) {
-    const resume = confirm("Resume saved progress for this game?");
-
-        if (resume) {
-            try {
-                const parsed = JSON.parse(saved);
-
-                if (Array.isArray(parsed)) {
-                    revealedIndexes = parsed;
-                    redrawFeed();
-                    return;
-                }
-            } catch {
-                localStorage.removeItem(SAVE_KEY);
+        let match = -1;
+        for (let i = searchFrom; i < events.length; i++) {
+            if (!usedNewIndexes.has(i) && eventIdentityKey(events[i]) === key) {
+                match = i;
+                break;
             }
         }
+        if (match === -1) {
+            // The event may have moved earlier in the array when a correction
+            // removed an event ahead of it: scan the whole array once more.
+            for (let i = 0; i < events.length; i++) {
+                if (!usedNewIndexes.has(i) && eventIdentityKey(events[i]) === key) {
+                    match = i;
+                    break;
+                }
+            }
+        }
+        if (match === -1) return; // corrected out of the feed; drop it
+        usedNewIndexes.add(match);
+        searchFrom = match + 1;
+        remapped.push(match);
+    });
+
+    return remapped;
+}
+
+async function loadGame(askResume = true) {
+    if (askResume) {
+        document.getElementById("status").innerHTML = "Loading WPBL game...";
+        document.getElementById("batterInfo").innerHTML = "";
+        document.getElementById("eventList").innerHTML = "";
+        clearRefreshNotice();
     }
 
-    updateStatus();
+    if (!selectedGameId) {
+        return;
+    }
+
+    // Never run two refetches concurrently: a slow connection must not let
+    // overlapping fetches race and rebuild the event array twice.
+    if (!askResume && refetchInFlight) {
+        return;
+    }
+    refetchInFlight = true;
+
+    const gameId = selectedGameId;
+
+    const feedUrl =
+        `${WPBL_API_BASE}/games/${gameId}/boxscore`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    try {
+        // Snapshot the current events before the rebuild so revealed
+        // positions can be remapped by stable play identity afterwards.
+        const previousEvents = events;
+
+        const feedResponse = await fetch(feedUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!feedResponse.ok) {
+            throw new Error(`Boxscore request failed (HTTP ${feedResponse.status})`);
+        }
+        const responseData = await feedResponse.json();
+        const feedData = responseData.boxscore;
+        if (!feedData || !Array.isArray(feedData.teams) || !Array.isArray(feedData.plays)) {
+            throw new Error("Boxscore response was not in the expected shape");
+        }
+
+        currentGameData = feedData;
+        currentGamePk = gameId;
+
+        const awayTeam = feedData.teams.find(team => team.side === "away");
+        const homeTeam = feedData.teams.find(team => team.side === "home");
+
+        awayTeamName = awayTeam?.name || "Away";
+        homeTeamName = homeTeam?.name || "Home";
+        selectedGameTeamColors = selectGameTeamColors(awayTeamName, homeTeamName);
+
+        buildEvents(feedData);
+        revealedIndexes = remapRevealedIndexes(revealedIndexes, previousEvents);
+
+        // A finished game never changes again: stop re-downloading it.
+        if (events.some(event => event.kind === "game-complete")) {
+            stopRefetchTimer();
+        }
+
+        const saved = localStorage.getItem(SAVE_KEY);
+
+        if (askResume && saved) {
+            const resume = confirm("Resume saved progress for this game?");
+
+            if (resume) {
+                try {
+                    const parsed = JSON.parse(saved);
+
+                    if (Array.isArray(parsed)) {
+                        revealedIndexes = remapRevealedIndexes(parsed, previousEvents);
+                        redrawFeed();
+                        return;
+                    }
+                } catch {
+                    localStorage.removeItem(SAVE_KEY);
+                }
+            }
+        }
+
+        if (!askResume) {
+            clearRefreshNotice();
+        }
+        updateStatus();
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (askResume) {
+            // Initial load failed: an honest error with a retry — never an
+            // infinite "Loading WPBL game..." spinner, and never a misleading
+            // empty scoreboard.
+            document.getElementById("status").innerHTML = `
+                <p class="no-games">
+                    Couldn't load this game. Check your connection, then try again.
+                </p>
+                <button class="game-choice retry-button" id="retryGameButton">
+                    <strong>Try Again</strong>
+                </button>
+            `;
+            document.getElementById("batterInfo").innerHTML = "";
+            document.getElementById("retryGameButton").addEventListener("click", () => loadGame());
+        } else {
+            // Background refetch failed: keep the old snapshot and say so,
+            // instead of silently going stale.
+            showRefreshNotice("Couldn't refresh the game — showing the last loaded data.");
+        }
+    } finally {
+        refetchInFlight = false;
+    }
 }
 function getRunsScored(play) {
     const narrative = play.narrative || "";
@@ -689,6 +889,7 @@ function getSpoilerFreeScore() {
 
     revealedIndexes.forEach(index => {
         const event = events[index];
+        if (!event) return;
 
         if (!event.runsScored) return;
 
@@ -716,6 +917,7 @@ function getSpoilerFreeHitsErrors() {
 
     revealedIndexes.forEach(index => {
         const event = events[index];
+        if (!event) return;
 
         if (!event.eventType) return;
 
@@ -820,6 +1022,7 @@ function getDisplayState() {
     if (currentIndex === -1) return { event: events[0], preview: true };
 
     const current = events[currentIndex];
+    if (!current) return { event: events[0], preview: true };
     if (current.isPlateAppearanceResult) {
         const nextPlateAppearance = events.slice(currentIndex + 1).find(event =>
             event.kind !== "game-complete" && event.atBat > current.atBat
@@ -859,6 +1062,18 @@ function updateStatus() {
 const score = getSpoilerFreeScore();
 const totals = getSpoilerFreeHitsErrors();
 
+    // A game with no play data yet (not started, postponed) renders an honest
+    // empty state — never a 0-0 scoreboard that implies a scoreless game.
+    if (events.length === 0) {
+        document.getElementById("status").innerHTML = `
+            <p class="no-games">
+                No play data available yet for this game. Check back closer to first pitch.
+            </p>
+        `;
+        document.getElementById("batterInfo").innerHTML = "";
+        return;
+    }
+
     const displayState = getDisplayState();
     const activeEvent = displayState?.event;
     const trackerScreen = document.getElementById("trackerScreen");
@@ -885,14 +1100,14 @@ document.getElementById("status").innerHTML = `
         </div>
 
 <div class="rhe-row">
-    <button class="team-link" onclick="showLineup('away')">${awayTeamName}</button>
+    <button class="team-link" onclick="showLineup('away')">${escapeHtml(awayTeamName)}</button>
     <span>${score.awayScore}</span>
     <span>${totals.awayHits}</span>
     <span>${totals.awayErrors}</span>
 </div>
 
 <div class="rhe-row">
-    <button class="team-link" onclick="showLineup('home')">${homeTeamName}</button>
+    <button class="team-link" onclick="showLineup('home')">${escapeHtml(homeTeamName)}</button>
     <span>${score.homeScore}</span>
     <span>${totals.homeHits}</span>
     <span>${totals.homeErrors}</span>
@@ -940,16 +1155,16 @@ const outDots =
 
 document.getElementById("batterInfo").innerHTML = `
     ${displayState.preview && currentIndex >= 0 ? '<div class="next-batter-label">Next Batter</div>' : ''}
-    <div class="inning-line">${event.inning}</div>
+    <div class="inning-line">${escapeHtml(event.inning)}</div>
 
     <div class="matchup-line">
-        <strong>${displayPitcher}${(() => {
+        <strong>${escapeHtml(displayPitcher)}${(() => {
             let pitchCount = getDisplayPitcherPitchCount(displayPitcher);
             if (pitchCount === null && displayPitcher !== event.pitcher) pitchCount = 0;
             return pitchCount === null ? "" : ` · ${pitchCount} pitches`;
         })()}</strong>
         <span> vs </span>
-        <strong>${event.batter}</strong>
+        <strong>${escapeHtml(event.batter)}</strong>
     </div>
 
     <div class="count-line">
@@ -1003,7 +1218,7 @@ function addEventCard(index) {
             : "#64748B";
         row.style.setProperty("--winner-color", winnerColor);
         const optionalDetail = (label, value) => value
-            ? `<div><dt>${label}</dt><dd>${value}</dd></div>`
+            ? `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`
             : "";
         const teamSummaryHtml = details.teams.map(team => {
             const rhe = [team.runs, team.hits, team.errors].every(value => value !== undefined && value !== null)
@@ -1014,17 +1229,17 @@ function addEventCard(index) {
                 : "";
             return `
                 <section class="postgame-team">
-                    <h4>${team.name}</h4>
+                    <h4>${escapeHtml(team.name)}</h4>
                     ${rhe ? `<p>${rhe}${leftOnBase}</p>` : ""}
                 </section>
             `;
         }).join("");
         const pitchCountHtml = details.teams.map(team => `
             <section class="pitch-count-team">
-                <h4>${team.name}</h4>
+                <h4>${escapeHtml(team.name)}</h4>
                 <ul>
                     ${team.pitchers.map(pitcher => `
-                        <li><span>${pitcher.name}</span><strong>${pitcher.pitches} pitches</strong></li>
+                        <li><span>${escapeHtml(pitcher.name)}</span><strong>${pitcher.pitches} pitches</strong></li>
                     `).join("")}
                 </ul>
             </section>
@@ -1059,7 +1274,7 @@ function addEventCard(index) {
 
     row.innerHTML = `
         <span class="event-icon">${icon}</span>
-        <span class="event-text">${event.text}</span>
+        <span class="event-text">${escapeHtml(event.text)}</span>
     `;
 
     document.getElementById("eventList").prepend(row);
@@ -1306,10 +1521,10 @@ function showLineup(teamSide) {
             lineupHtml += `
                 <li>
                     <span class="lineup-player">
-                        ${number} ${player.name}
+                        ${escapeHtml(number)} ${escapeHtml(player.name)}
                     </span>
                     <span class="lineup-position">
-                        ${position}
+                        ${escapeHtml(position)}
                     </span>
                 </li>
             `;
@@ -1319,7 +1534,7 @@ function showLineup(teamSide) {
     }
 
     document.getElementById("lineupTitle").innerHTML =
-        `${team.name} Lineup at Revealed Point`;
+        `${escapeHtml(team.name)} Lineup at Revealed Point`;
 
     document.getElementById("lineupBody").innerHTML =
         lineupHtml;
@@ -1331,9 +1546,5 @@ function closeLineup() {
     document.getElementById("lineupModal").classList.add("hidden");
 }
 loadWPBLGames();
-
-setInterval(() => {
-    if (selectedGameId) {
-        loadGame(false);
-    }
-}, 15000);
+// The 15s refetch timer is started by selectGame and stopped by
+// returnToGamePicker or when the game completes — see startRefetchTimer().
