@@ -331,6 +331,14 @@ function eventIdentityKey(event) {
 function remapRevealedIndexes(oldIndexes, previousEvents) {
     if (!Array.isArray(oldIndexes) || oldIndexes.length === 0) return [];
     if (previousEvents === events) return oldIndexes.slice();
+    if (previousEvents.length === 0) {
+        // Fresh game selection: selectGame reset the array, so there are no
+        // old identities to match against. Restore positions directly, but
+        // clamp to the new array so a corrected feed can never crash.
+        return oldIndexes.filter(index =>
+            Number.isInteger(index) && index >= 0 && index < events.length
+        );
+    }
 
     const oldKeys = previousEvents.map(eventIdentityKey);
     const usedNewIndexes = new Set();
